@@ -1,5 +1,4 @@
 use axum::{extract::State, response::IntoResponse, extract::ws::{WebSocket, WebSocketUpgrade}};
-use tracing::{info};
 
 use crate::{app_state::AppState, protocol::WebSocketConnection, service::handle_terminal_session};
 

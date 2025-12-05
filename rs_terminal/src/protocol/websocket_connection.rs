@@ -46,8 +46,8 @@ impl TerminalConnection for WebSocketConnection {
             Some(Ok(Ping(ping))) => {
                 Some(Ok(TerminalMessage::Ping(ping)))
             },
-            Some(Ok(Pong(pong))) => {
-                Some(Ok(TerminalMessage::Pong(pong)))
+            Some(Ok(Pong(_pong))) => {
+                Some(Ok(TerminalMessage::Pong(())))
             },
             Some(Ok(Close(_))) => {
                 Some(Ok(TerminalMessage::Close))

@@ -34,7 +34,7 @@ pub enum TerminalMessage {
     /// Ping message
     Ping(Vec<u8>),
     /// Pong message
-    Pong(Vec<u8>),
+    Pong(()),
     /// Close message
     Close,
 }
