@@ -14,8 +14,7 @@ axum = { version = "~0.7", features = ["ws"] }
 wtransport = "~0.6"
 quinn = { version = "~0.11", features = ["rustls"] }
 
-# PTY实现 (同步，需异步包装)
-portable-pty = "~0.9"
+# PTY实现 (使用tokio-process，跨平台兼容)
 
 # 异步工具与抽象
 tokio-util = { version = "~0.7", features = ["io", "compat"] }

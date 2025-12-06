@@ -3,13 +3,11 @@
 /// with a focus on pure async operations
 
 mod pty_trait;
-#[cfg(unix)]
-mod unix_pty_impl;
+mod tokio_process_pty_impl;
 
 // Export all public types and traits
 pub use pty_trait::*;
-#[cfg(unix)]
-pub use unix_pty_impl::{UnixPty, UnixPtyFactory};
+pub use tokio_process_pty_impl::{TokioProcessPty, TokioProcessPtyFactory};
 
 
 
@@ -75,30 +73,16 @@ pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) 
         cwd: working_directory,
     };
     
-    // 只使用Unix PTY实现
-    #[cfg(unix)]
-    {
-        let factory = UnixPtyFactory::default();
-        let pty = factory.create(&pty_config).await?;
-        Ok(pty)
-    }
-    #[cfg(not(unix))]
-    {
-        // 非Unix平台不支持PTY
-        return Err(PtyError::Other("PTY not supported on this platform".to_string()));
-    }
+    // 使用Tokio Process PTY实现
+    let factory = TokioProcessPtyFactory::default();
+    let pty = factory.create(&pty_config).await?;
+    Ok(pty)
 }
 
 /// Create a new PTY instance with custom configuration
 pub async fn create_pty_with_config(config: &PtyConfig) -> Result<Box<dyn AsyncPty>, PtyError> {
-    #[cfg(unix)]
-    return UnixPtyFactory::default().create(config).await;
-    
-    #[cfg(not(unix))]
-    {
-        // 非Unix平台不支持PTY
-        return Err(PtyError::Other("PTY not supported on this platform".to_string()));
-    }
+    // 使用Tokio Process PTY实现
+    TokioProcessPtyFactory::default().create(config).await
 }
 
 /// Create a new PTY instance using a specific factory
