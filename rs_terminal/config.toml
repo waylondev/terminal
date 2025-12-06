@@ -1,0 +1,48 @@
+# rs_terminal configuration file
+
+# Default shell type to use
+default_shell_type = "cmd"
+
+# Default terminal dimensions
+default_size = {
+    columns = 80,
+    rows = 24
+}
+
+# Default working directory
+default_working_directory = "."
+
+# Session timeout in milliseconds (30 minutes)
+session_timeout = 1800000
+
+# Shell configurations
+shells = {
+    # Bash shell configuration
+    bash = {
+        command = ["bash", "-l"],
+        working_directory = null,
+        size = null,
+        environment = {
+            TERM = "xterm-256color",
+            PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        }
+    },
+    # CMD shell configuration (for Windows)
+    cmd = {
+        command = ["cmd.exe"],
+        working_directory = null,
+        size = null,
+        environment = {
+            TERM = "xterm-256color"
+        }
+    },
+    # PowerShell configuration (for Windows)
+    powershell = {
+        command = ["powershell.exe"],
+        working_directory = null,
+        size = null,
+        environment = {
+            TERM = "xterm-256color"
+        }
+    }
+}

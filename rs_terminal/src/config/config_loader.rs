@@ -1,10 +1,9 @@
 /// Configuration file loader for rs_terminal
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
-use serde::Deserialize;
 use tracing::{info, error};
-use crate::config::TerminalConfig;
+use crate::config::{TerminalConfig, TerminalSize, ShellConfig};
 
 /// Configuration loader responsible for loading and parsing configuration files
 pub struct ConfigLoader;
@@ -15,38 +14,46 @@ impl ConfigLoader {
         Self
     }
 
-    /// Load configuration from a file, or return default if file doesn't exist
+    /// Load configuration from a file
     pub fn load_config(&self, config_path: Option<&Path>) -> TerminalConfig {
-        match config_path {
-            Some(path) => {
-                self.load_config_from_file(path)
-            },
+        // 处理配置文件路径
+        let config_file_path = match config_path {
+            Some(path) => path.to_path_buf(),
             None => {
-                info!("No configuration file specified, using default configuration");
-                TerminalConfig::default()
+                // 使用默认配置文件路径
+                match default_config_path() {
+                    Some(path) => {
+                        info!("Using default configuration file path: {:?}", path);
+                        path
+                    },
+                    None => {
+                        panic!("No configuration file path specified and default path not available")
+                    }
+                }
             }
-        }
+        };
+        
+        // 从文件加载配置
+        self.load_config_from_file(&config_file_path)
     }
 
     /// Load configuration from a specific file path
     fn load_config_from_file(&self, path: &Path) -> TerminalConfig {
         info!("Loading configuration from file: {:?}", path);
         
-        match File::open(path) {
-            Ok(mut file) => {
-                let mut contents = String::new();
-                if let Err(e) = file.read_to_string(&mut contents) {
-                    error!("Failed to read configuration file: {}, using default configuration", e);
-                    return TerminalConfig::default();
-                }
-                
-                self.parse_config(&contents)
-            },
+        let mut file = match File::open(path) {
+            Ok(file) => file,
             Err(e) => {
-                error!("Failed to open configuration file: {}, using default configuration", e);
-                TerminalConfig::default()
+                panic!("Failed to open configuration file: {}", e);
             }
+        };
+        
+        let mut contents = String::new();
+        if let Err(e) = file.read_to_string(&mut contents) {
+            panic!("Failed to read configuration file: {}", e);
         }
+        
+        self.parse_config(&contents)
     }
 
     /// Parse configuration from string content
@@ -57,8 +64,7 @@ impl ConfigLoader {
                 config
             },
             Err(e) => {
-                error!("Failed to parse configuration: {}, using default configuration", e);
-                TerminalConfig::default()
+                panic!("Failed to parse configuration: {}", e);
             }
         }
     }
@@ -66,8 +72,6 @@ impl ConfigLoader {
 
 /// Default configuration path
 pub fn default_config_path() -> Option<std::path::PathBuf> {
-    // Try to get the executable directory
-    std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(|dir| dir.join("config.toml")))
+    // 使用当前工作目录作为默认配置文件目录
+    Some(std::env::current_dir().unwrap().join("config.toml"))
 }
