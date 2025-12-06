@@ -1,9 +1,10 @@
 /// Terminal session handler for processing terminal connections
 use tokio::select;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{debug, error, info};
+use tokio::io::AsyncReadExt;
+use tracing::{error, info};
 
 use crate::{app_state::AppState, protocol::TerminalConnection};
+use super::{SessionManager, PtyManager, MessageHandler};
 
 /// Handle a terminal session using the TerminalConnection trait
 pub async fn handle_terminal_session(mut connection: impl TerminalConnection, state: AppState) {
@@ -15,25 +16,24 @@ pub async fn handle_terminal_session(mut connection: impl TerminalConnection, st
         conn_id, conn_type
     );
 
-    // Add session to state
-    let mut sessions = state.sessions.lock().await;
-    sessions.push(conn_id.clone());
-    drop(sessions);
+    // Initialize managers
+    let session_manager = SessionManager::new(state.clone());
+    let pty_manager = PtyManager::new();
+    let message_handler = MessageHandler::new();
 
-    // Create PTY for this session using factory function
-    let mut pty = match crate::pty::create_pty().await {
+    // Add session to state
+    session_manager.add_session(&conn_id).await;
+
+    // Create PTY for this session
+    let mut pty = match pty_manager.create_pty().await {
         Ok(pty) => pty,
         Err(e) => {
-            error!("Failed to create PTY for session {}: {}", conn_id, e);
             // Send error message and close connection
-            let _ = connection
-                .send_text(&format!("Error: Failed to create terminal session: {}", e))
-                .await;
+            let error_msg = format!("Error: Failed to create terminal session: {}", e);
+            let _ = connection.send_text(&error_msg).await;
             let _ = connection.close().await;
             // Clean up session
-            let mut sessions = state.sessions.lock().await;
-            sessions.retain(|id| id != &conn_id);
-            drop(sessions);
+            session_manager.remove_session(&conn_id).await;
             return;
         }
     };
@@ -42,43 +42,24 @@ pub async fn handle_terminal_session(mut connection: impl TerminalConnection, st
 
     // Main session loop - handle both incoming messages and PTY output directly
     let mut pty_buffer = [0u8; 4096];
+    let mut should_close = false;
+
     loop {
         select! {
             // Handle incoming messages from the connection
             msg_result = connection.receive() => {
                 match msg_result {
                     Some(Ok(msg)) => {
-                        match msg {
-                            crate::protocol::TerminalMessage::Text(text) => {
-                                debug!("Received text message from session {}: {}", conn_id, text);
-                                // Write the text to PTY directly (non-blocking async)
-                                if let Err(e) = pty.write(text.as_bytes()).await {
-                                    error!("Failed to write to PTY for session {}: {}", conn_id, e);
+                        // Use message handler to process the message
+                        match message_handler.handle_message(msg, &mut connection, &mut pty, &conn_id).await {
+                            Ok(close) => {
+                                if close {
+                                    should_close = true;
                                     break;
                                 }
-                            }
-                            crate::protocol::TerminalMessage::Binary(bin) => {
-                                debug!("Received binary message from session {} of length {}", conn_id, bin.len());
-                                // Write binary data to PTY directly (non-blocking async)
-                                if let Err(e) = pty.write(&bin).await {
-                                    error!("Failed to write binary data to PTY for session {}: {}", conn_id, e);
-                                    break;
-                                }
-                            }
-                            crate::protocol::TerminalMessage::Ping(_) => {
-                                debug!("Received ping from session {}", conn_id);
-                                // Respond with pong
-                                if let Err(e) = connection.send_text(&"Pong").await {
-                                    error!("Failed to send pong response to session {}: {}", conn_id, e);
-                                    break;
-                                }
-                            }
-                            crate::protocol::TerminalMessage::Pong(_) => {
-                                debug!("Received pong from session {}", conn_id);
-                                // Pong received, do nothing
-                            }
-                            crate::protocol::TerminalMessage::Close => {
-                                info!("Received close message from session {}", conn_id);
+                            },
+                            Err(e) => {
+                                error!("Failed to handle message for session {}: {}", conn_id, e);
                                 break;
                             }
                         }
@@ -103,29 +84,11 @@ pub async fn handle_terminal_session(mut connection: impl TerminalConnection, st
                         break;
                     }
                     Ok(n) => {
-                        // PTY output received
-                        debug!("Received {} bytes from PTY for session {}", n, conn_id);
-                        
+                        // Use message handler to process PTY output
                         let data = &pty_buffer[..n];
-                        // Print the data in a human-readable format
-                        debug!("PTY data: {:?}", String::from_utf8_lossy(data));
-                        
-                        // Try to convert data to string for text-based protocols
-                        match String::from_utf8(data.to_vec()) {
-                            Ok(text) => {
-                                // Send text to client
-                                if let Err(e) = connection.send_text(&text).await {
-                                    error!("Failed to send PTY text output to session {}: {}", conn_id, e);
-                                    break;
-                                }
-                            },
-                            Err(_) => {
-                                // Send as binary if conversion fails
-                                if let Err(e) = connection.send_binary(data).await {
-                                    error!("Failed to send PTY binary output to session {}: {}", conn_id, e);
-                                    break;
-                                }
-                            }
+                        if let Err(e) = message_handler.handle_pty_output(data, &mut connection, &conn_id).await {
+                            error!("Failed to handle PTY output for session {}: {}", conn_id, e);
+                            break;
                         }
                     }
                     Err(e) => {
@@ -146,14 +109,12 @@ pub async fn handle_terminal_session(mut connection: impl TerminalConnection, st
     }
 
     // Kill the PTY process
-    if let Err(e) = pty.kill().await {
+    if let Err(e) = pty_manager.kill_pty(&mut pty).await {
         error!("Failed to kill PTY process for session {}: {}", conn_id, e);
     }
 
     // Remove session from state
-    let mut sessions = state.sessions.lock().await;
-    sessions.retain(|id| id != &conn_id);
-    drop(sessions);
+    session_manager.remove_session(&conn_id).await;
 
     info!("Terminal session {} closed", conn_id);
 }
