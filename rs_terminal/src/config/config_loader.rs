@@ -1,9 +1,9 @@
 /// Configuration file loader for rs_terminal
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::Path;
-use tracing::{info, error};
-use crate::config::{TerminalConfig, TerminalSize, ShellConfig};
+use tracing::info;
+use crate::config::TerminalConfig;
 
 /// Configuration loader responsible for loading and parsing configuration files
 pub struct ConfigLoader;

@@ -75,18 +75,57 @@ pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) 
         }
     };
     
-    // Extract command and arguments
-    let mut command = shell_config.command.join(" ");
-    let args: Vec<String> = shell_config.command.iter().skip(1).cloned().collect();
+    // Get default shell configuration as fallback
+    let default_shell_config = app_config.shells.get("default").unwrap_or_else(|| {
+        panic!("No default shell configuration found in shells.default")
+    });
+    
+    // Extract command and arguments with priority: shell_config.command > default_shell_config.command
+    let command_vec = shell_config.command.as_ref().unwrap_or_else(|| {
+        default_shell_config.command.as_ref().expect("No command configured in shells.default")
+    });
+    let command = command_vec[0].clone();
+    let args: Vec<String> = command_vec.iter().skip(1).cloned().collect();
+    
+    // Determine working directory with priority: shell_config.working_directory > default_shell_config.working_directory
+    let working_directory = shell_config.working_directory.clone()
+        .or_else(|| default_shell_config.working_directory.clone());
+    
+    // Determine terminal size with priority: shell_config.size > default_shell_config.size
+    let terminal_size = shell_config.size.as_ref().unwrap_or_else(|| {
+        default_shell_config.size.as_ref().expect("No terminal size configured in shells.default")
+    }).clone();
+    
+    // Determine environment variables with priority: shell_config.environment > default_shell_config.environment
+    let mut environment = Vec::new();
+    
+    // Add default environment variables from shells.default
+    if let Some(default_env) = &default_shell_config.environment {
+        for (key, value) in default_env {
+            environment.push((key.clone(), value.clone()));
+        }
+    }
+    
+    // Add explicit environment variables from shell config, overwriting defaults
+    if let Some(shell_env) = &shell_config.environment {
+        for (key, value) in shell_env {
+            // Check if the key already exists, if so, replace it
+            if let Some(index) = environment.iter().position(|(k, _)| k == key) {
+                environment[index] = (key.clone(), value.clone());
+            } else {
+                environment.push((key.clone(), value.clone()));
+            }
+        }
+    }
     
     // Create PTY config
     let pty_config = PtyConfig {
         command: command,
         args: args,
-        cols: app_config.default_size.columns,
-        rows: app_config.default_size.rows,
-        env: shell_config.environment.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        cwd: shell_config.working_directory.clone(),
+        cols: terminal_size.columns,
+        rows: terminal_size.rows,
+        env: environment,
+        cwd: working_directory,
     };
     
     // 根据平台选择不同的PTY实现
