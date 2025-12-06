@@ -23,10 +23,10 @@ environment.PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 [shells.cmd]
 # CMD shell configuration (for Windows)
-command = ["cmd"]
+command = ["cmd.exe", "/K"]
 environment.TERM = "xterm-256color"
 
 [shells.powershell]
 # PowerShell configuration (for Windows)
-command = ["powershell"]
+command = ["powershell.exe", "-NoExit", "-Command", "-"]
 environment.TERM = "xterm-256color"
