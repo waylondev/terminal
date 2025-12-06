@@ -20,7 +20,13 @@ async fn main() {
 
     // Load configuration
     let config_loader = ConfigLoader::new();
-    let config = config_loader.load_config(None); // Use None for default path
+    let config = match config_loader.load_config(None) { // Use None for default path
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Failed to load configuration: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     // Create application state with configuration
     let app_state = AppState::new(config);

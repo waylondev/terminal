@@ -68,17 +68,23 @@ pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) 
     let shell_config = match app_config.shells.get(default_shell_type) {
         Some(config) => config,
         None => {
-            // If default shell is not found, use bash
-            app_config.shells.get("bash").unwrap_or_else(|| {
-                panic!("No shell configuration found for default shell: {}", default_shell_type)
-            })
+            // If default shell is not found, try bash
+            match app_config.shells.get("bash") {
+                Some(config) => config,
+                None => {
+                    return Err(PtyError::Other(format!("No shell configuration found for default shell: {}", default_shell_type)));
+                }
+            }
         }
     };
     
     // Get default shell configuration as fallback
-    let default_shell_config = app_config.shells.get("default").unwrap_or_else(|| {
-        panic!("No default shell configuration found in shells.default")
-    });
+    let default_shell_config = match app_config.shells.get("default") {
+        Some(config) => config,
+        None => {
+            return Err(PtyError::Other("No default shell configuration found in shells.default".to_string()));
+        }
+    };
     
     // Extract command and arguments from shell config (command is required for each shell)
     let command = shell_config.command[0].clone();
@@ -98,6 +104,7 @@ pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) 
     
     // Add default environment variables from shells.default
     if let Some(default_env) = &default_shell_config.environment {
+        environment.reserve(default_env.len());
         for (key, value) in default_env {
             environment.push((key.clone(), value.clone()));
         }
@@ -105,6 +112,7 @@ pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) 
     
     // Add explicit environment variables from shell config, overwriting defaults
     if let Some(shell_env) = &shell_config.environment {
+        environment.reserve(environment.len() + shell_env.len());
         for (key, value) in shell_env {
             // Check if the key already exists, if so, replace it
             if let Some(index) = environment.iter().position(|(k, _)| k == key) {
