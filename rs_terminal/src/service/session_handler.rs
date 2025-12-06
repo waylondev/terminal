@@ -141,13 +141,35 @@ pub async fn handle_terminal_session(mut connection: impl TerminalConnection, st
             // This is non-blocking as we're just receiving from a channel
             Some(data) = rx.recv() => {
                 info!("Main loop: Received {} bytes from PTY read task for session {}", data.len(), conn_id);
-                // Send the PTY output back to the connection
-                info!("Main loop: Sending data to client via connection");
-                if let Err(e) = connection.send_binary(&data).await {
-                    error!("Main loop: Failed to send PTY output to session {}: {}", conn_id, e);
-                    break;
+                // Print the raw data for debugging
+                debug!("Main loop: Raw PTY data: {:?}", data);
+                
+                // Try to convert data to string for text-based protocols
+                match String::from_utf8(data.clone()) {
+                    Ok(text) => {
+                        info!("Main loop: Sending text data to client via connection");
+                        debug!("Main loop: Text content to send: {:?}", text);
+                        debug!("Main loop: Text length: {}", text.len());
+                        
+                        if let Err(e) = connection.send_text(&text).await {
+                            error!("Main loop: Failed to send PTY text output to session {}: {}", conn_id, e);
+                            break;
+                        }
+                        info!("Main loop: Successfully sent PTY text output to client");
+                    },
+                    Err(_) => {
+                        // If conversion fails, send as binary
+                        info!("Main loop: Sending binary data to client via connection");
+                        debug!("Main loop: Binary data to send: {:?}", data);
+                        debug!("Main loop: Binary length: {}", data.len());
+                        
+                        if let Err(e) = connection.send_binary(&data).await {
+                            error!("Main loop: Failed to send PTY binary output to session {}: {}", conn_id, e);
+                            break;
+                        }
+                        info!("Main loop: Successfully sent PTY binary output to client");
+                    }
                 }
-                info!("Main loop: Successfully sent PTY output to client");
             },
         }
     }

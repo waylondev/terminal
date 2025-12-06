@@ -1,11 +1,7 @@
 /// Mock PTY implementation for testing purposes
 /// This implementation simulates PTY operations with fixed responses
 use std::sync::{Arc, Mutex};
-use std::io::{Read, Write, Cursor};
 use tracing::{info, error, debug};
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio_util::io::SyncIoBridge;
 
 use crate::pty::Pty;
 
@@ -38,15 +34,15 @@ impl MockPty {
             
             // Simulate processing the input and generating a fixed response
             let response = match data_str.trim() {
-                "dir" => "Directory listing:\n  file1.txt\n  file2.txt\n  folder/\n",
-                "echo hello" => "hello\n",
-                "ls" => "file1.txt  file2.txt  folder/\n",
-                "pwd" => "/home/user\n",
-                "whoami" => "user\n",
+                "dir" => String::from("Directory listing:\n  file1.txt\n  file2.txt\n  folder/\n"),
+                "echo hello" => String::from("hello\n"),
+                "ls" => String::from("file1.txt  file2.txt  folder/\n"),
+                "pwd" => String::from("/home/user\n"),
+                "whoami" => String::from("user\n"),
                 "exit" => {
                     // Update alive status
                     *alive_clone.lock().unwrap() = false;
-                    "Exiting...\n"
+                    String::from("Exiting...\n")
                 },
                 _ => format!("Unknown command: {}\n", data_str),
             };
