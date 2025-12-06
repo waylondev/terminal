@@ -17,49 +17,7 @@ pub use unix_pty_impl::{UnixPty, UnixPtyFactory};
 pub use windows_pty_impl::{WindowsPty, WindowsPtyFactory};
 pub use memory_pty::{MemoryPty, MemoryPtyFactory};
 
-/// Create a new PTY instance with default configuration
-/// This function returns a pure async PTY implementation
-pub async fn create_pty() -> Result<Box<dyn AsyncPty>, PtyError> {
-    // 创建配置
-    let config = PtyConfig {
-        command: "bash".to_string(),
-        args: vec![],
-        cols: 80,
-        rows: 24,
-        env: vec![
-            ("TERM".to_string(), "xterm-256color".to_string()),
-            ("COLORTERM".to_string(), "truecolor".to_string()),
-        ],
-        cwd: None,
-    };
 
-    // 根据平台选择不同的PTY实现
-    #[cfg(unix)]
-    {
-        let factory = UnixPtyFactory::default();
-        let pty = factory.create(&config).await?;
-        Ok(pty)
-    }
-    #[cfg(windows)]
-    {
-        // 首先尝试WindowsPty，如果不可用则回退到MemoryPty
-        let factory = WindowsPtyFactory::default();
-        match factory.create(&config).await {
-            Ok(pty) => Ok(pty),
-            Err(_) => {
-                let factory = MemoryPtyFactory::default();
-                let pty = factory.create(&config).await?;
-                Ok(pty)
-            }
-        }
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let factory = MemoryPtyFactory::default();
-        let pty = factory.create(&config).await?;
-        Ok(pty)
-    }
-}
 
 /// Create a new PTY instance using configuration from the application config
 pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) -> Result<Box<dyn AsyncPty>, PtyError> {

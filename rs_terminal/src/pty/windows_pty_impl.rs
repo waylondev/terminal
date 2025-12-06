@@ -43,6 +43,20 @@ impl WindowsPty {
             pixel_height: 0,
         })?;
 
+        // 打印调试信息
+        info!("WindowsPty: Creating command with:");
+        info!("  command: {:?}", config.command);
+        info!("  args: {:?}", config.args);
+        info!("  cwd: {:?}", config.cwd);
+        info!("  env count: {}", config.env.len());
+        // 打印几个关键的环境变量
+        if let Some((_, path)) = config.env.iter().find(|(k, _)| k == "PATH") {
+            info!("  PATH: {:?}", path);
+        }
+        if let Some((_, term)) = config.env.iter().find(|(k, _)| k == "TERM") {
+            info!("  TERM: {:?}", term);
+        }
+
         // 设置命令
         let mut cmd = CommandBuilder::new(&config.command);
         for arg in &config.args {
@@ -56,6 +70,7 @@ impl WindowsPty {
 
         // 设置工作目录
         if let Some(cwd) = &config.cwd {
+            info!("  Setting cwd to: {:?}", cwd);
             cmd.cwd(cwd);
         }
 

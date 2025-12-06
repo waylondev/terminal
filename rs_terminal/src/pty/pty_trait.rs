@@ -16,18 +16,7 @@ pub struct PtyConfig {
     pub cwd: Option<std::path::PathBuf>,
 }
 
-impl Default for PtyConfig {
-    fn default() -> Self {
-        Self {
-            command: if cfg!(windows) { "cmd.exe" } else { "bash" }.to_string(),
-            args: vec![],
-            cols: 80,
-            rows: 24,
-            env: vec![("TERM".to_string(), "xterm-256color".to_string())],
-            cwd: None,
-        }
-    }
-}
+
 
 #[derive(Debug, Error)]
 pub enum PtyError {
