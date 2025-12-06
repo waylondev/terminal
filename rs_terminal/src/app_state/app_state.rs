@@ -7,7 +7,7 @@ use crate::config::TerminalConfig;
 #[derive(Clone)]
 pub struct AppState {
     /// List of active session IDs
-    pub sessions: Arc<Mutex<Vec<String>>>,
+    pub sessions: Arc<Mutex<Vec<Arc<str>>>>,
     /// Application configuration
     pub config: Arc<TerminalConfig>,
 }

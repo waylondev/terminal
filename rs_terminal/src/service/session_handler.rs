@@ -8,6 +8,7 @@ use super::{SessionManager, PtyManager, MessageHandler};
 
 /// Handle a terminal session using the TerminalConnection trait
 pub async fn handle_terminal_session(mut connection: impl TerminalConnection, state: AppState) {
+    // Clone conn_id immediately to avoid borrowing issues
     let conn_id = connection.id().to_string();
     let conn_type = connection.connection_type();
 

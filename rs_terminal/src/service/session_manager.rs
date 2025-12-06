@@ -18,7 +18,7 @@ impl SessionManager {
     /// Add a new session to the state
     pub async fn add_session(&self, session_id: &str) {
         let mut sessions = self.app_state.sessions.lock().await;
-        sessions.push(session_id.to_string());
+        sessions.push(session_id.into());
         info!("Added session: {}", session_id);
     }
 
@@ -26,7 +26,7 @@ impl SessionManager {
     pub async fn remove_session(&self, session_id: &str) {
         let mut sessions = self.app_state.sessions.lock().await;
         let initial_len = sessions.len();
-        sessions.retain(|id| id != session_id);
+        sessions.retain(|id| id.as_ref() != session_id);
         
         if sessions.len() < initial_len {
             info!("Removed session: {}", session_id);

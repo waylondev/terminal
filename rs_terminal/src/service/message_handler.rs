@@ -129,18 +129,19 @@ impl MessageHandler {
         debug!("Received PTY data for session {}: {:?}", session_id, String::from_utf8_lossy(data));
         
         // Try to convert data to string for text-based protocols
-        match String::from_utf8(data.to_vec()) {
-            Ok(text) => {
+        use std::borrow::Cow;
+        match String::from_utf8_lossy(data) {
+            Cow::Borrowed(text) => {
                 // Send text to client
-                if let Err(e) = connection.send_text(&text).await {
+                if let Err(e) = connection.send_text(text).await {
                     error!("Failed to send PTY text output to session {}: {}", session_id, e);
                     return Err(ServiceError::Connection(e));
                 }
             },
-            Err(_) => {
-                // Send as binary if conversion fails
-                if let Err(e) = connection.send_binary(data).await {
-                    error!("Failed to send PTY binary output to session {}: {}", session_id, e);
+            Cow::Owned(text) => {
+                // Send text to client
+                if let Err(e) = connection.send_text(&text).await {
+                    error!("Failed to send PTY text output to session {}: {}", session_id, e);
                     return Err(ServiceError::Connection(e));
                 }
             }
