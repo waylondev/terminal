@@ -50,8 +50,11 @@ impl MessageHandler {
     ) -> Result<bool, ServiceError> {
         debug!("Received text message from session {}: {}", session_id, text);
         
-        // Write the text to PTY directly (non-blocking async)
-        match pty.write(text.as_bytes()).await {
+        // 处理转义的换行符 - 将字符串中的 "\n" 替换为实际的换行符字节
+        let processed_text = text.replace("\\n", "\n");
+        
+        // Write the processed text to PTY (non-blocking async)
+        match pty.write(processed_text.as_bytes()).await {
             Ok(_) => Ok(false),
             Err(e) => {
                 error!("Failed to write text to PTY for session {}: {}", session_id, e);

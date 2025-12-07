@@ -1,7 +1,7 @@
 # rs_terminal configuration file
 
 # Default shell type to use
-default_shell_type = "bash"
+default_shell_type = "cmd"
 
 # Session timeout in milliseconds (30 minutes)
 session_timeout = 1800000
@@ -23,10 +23,10 @@ environment.PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 [shells.cmd]
 # CMD shell configuration (for Windows)
-command = ["cmd.exe", "/K"]
+command = ["cmd", "/K"]
 environment.TERM = "xterm-256color"
 
 [shells.powershell]
 # PowerShell configuration (for Windows)
-command = ["powershell.exe", "-NoExit", "-Command", "-"]
+command = ["powershell", "-NoExit", "-Command", "-"]
 environment.TERM = "xterm-256color"

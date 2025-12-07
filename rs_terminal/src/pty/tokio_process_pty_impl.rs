@@ -45,7 +45,6 @@ impl TokioProcessPty {
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            // 设置为新的进程组，避免受到信号影响
             .kill_on_drop(true);
         
         // 生成子进程
@@ -91,72 +90,45 @@ impl AsyncRead for TokioProcessPty {
     ) -> Poll<std::io::Result<()>> {
         let self_mut = self.get_mut();
         
-        // 检查进程是否还活着
-        if self_mut.child_exited {
-            debug!("TokioProcessPty: Process has exited, returning EOF");
-            return Poll::Ready(Ok(()));
-        }
-        
-        // 添加调试日志
-        debug!("TokioProcessPty: Polling for read, buffer remaining: {}", buf.remaining());
-        
-        // 保存当前填充的长度，用于检查是否读取到数据
-        let initial_filled = buf.filled().len();
-        
-        // 1. 首先检查进程是否已退出
+        // 检查进程是否已退出
         if let Ok(Some(status)) = self_mut.child.try_wait() {
             debug!("TokioProcessPty: Child process exited with status: {:?}", status);
             self_mut.child_exited = true;
             return Poll::Ready(Ok(()));
         }
         
-        // 2. 尝试从 stdout 读取
+        // 首先尝试从 stdout 读取数据
         let stdout_result = Pin::new(&mut self_mut.stdout).poll_read(cx, buf);
         
         match stdout_result {
             Poll::Ready(Ok(())) => {
-                let bytes_read = buf.filled().len() - initial_filled;
-                if bytes_read > 0 {
-                    debug!("TokioProcessPty: Read {} bytes from stdout", bytes_read);
-                    let data = &buf.filled()[initial_filled..];
-                    debug!("TokioProcessPty: Read data from stdout: {}", String::from_utf8_lossy(data));
-                }
+                // 从 stdout 读取到数据，返回结果
                 return Poll::Ready(Ok(()));
             }
             Poll::Ready(Err(e)) => {
+                // stdout 出错，尝试从 stderr 读取
                 error!("TokioProcessPty: Error reading from stdout: {}", e);
-                // 继续尝试从 stderr 读取
             }
             Poll::Pending => {
-                debug!("TokioProcessPty: stdout read pending");
+                // stdout 没有数据，尝试从 stderr 读取
             }
         }
         
-        // 3. 尝试从 stderr 读取
+        // 从 stderr 读取数据
         let stderr_result = Pin::new(&mut self_mut.stderr).poll_read(cx, buf);
         
         match stderr_result {
             Poll::Ready(Ok(())) => {
-                let bytes_read = buf.filled().len() - initial_filled;
-                if bytes_read > 0 {
-                    debug!("TokioProcessPty: Read {} bytes from stderr", bytes_read);
-                    let data = &buf.filled()[initial_filled..];
-                    debug!("TokioProcessPty: Read data from stderr: {}", String::from_utf8_lossy(data));
-                }
+                // 从 stderr 读取到数据，返回结果
                 return Poll::Ready(Ok(()));
             }
             Poll::Ready(Err(e)) => {
+                // stderr 出错，返回错误
                 error!("TokioProcessPty: Error reading from stderr: {}", e);
-                // 检查进程是否已退出
-                if let Ok(Some(status)) = self_mut.child.try_wait() {
-                    debug!("TokioProcessPty: Child process exited with status: {:?}", status);
-                    self_mut.child_exited = true;
-                    return Poll::Ready(Ok(()));
-                }
                 return Poll::Ready(Err(e));
             }
             Poll::Pending => {
-                debug!("TokioProcessPty: stderr read pending, no data available");
+                // 两个流都没有数据，返回 Pending
                 return Poll::Pending;
             }
         }
