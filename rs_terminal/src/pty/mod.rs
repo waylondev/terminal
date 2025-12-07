@@ -1,16 +1,20 @@
-#[cfg(feature = "portable-pty")]
-mod portable_pty_impl;
 /// PTY (Pseudo Terminal) handling for Waylon Terminal
 /// This module provides a trait abstraction for different PTY implementations
 /// with a focus on pure async operations
 mod pty_trait;
 mod tokio_process_pty_impl;
+#[cfg(feature = "portable-pty")]
+mod portable_pty_impl;
+#[cfg(feature = "expectrl-pty")]
+mod expectrl_pty_impl;
 
 // Export all public types and traits
-#[cfg(feature = "portable-pty")]
-pub use portable_pty_impl::PortablePtyFactory;
 pub use pty_trait::*;
 pub use tokio_process_pty_impl::TokioProcessPtyFactory;
+#[cfg(feature = "portable-pty")]
+pub use portable_pty_impl::PortablePtyFactory;
+#[cfg(feature = "expectrl-pty")]
+pub use expectrl_pty_impl::ExpectrlPtyFactory;
 
 use tracing::info;
 
@@ -22,6 +26,16 @@ pub fn get_pty_factory(implementation_name: &str) -> Box<dyn PtyFactory + Send +
         "portable_pty" => {
             info!("Using PortablePtyFactory implementation");
             Box::new(PortablePtyFactory)
+        }
+        #[cfg(feature = "expectrl-pty")]
+        "expectrl-pty" => {
+            info!("Using ExpectrlPtyFactory implementation");
+            Box::new(ExpectrlPtyFactory)
+        }
+        #[cfg(not(feature = "expectrl-pty"))]
+        "expectrl-pty" => {
+            info!("Expectrl-pty feature not enabled, using default PTY implementation (TokioProcessPtyFactory)");
+            Box::new(TokioProcessPtyFactory)
         }
         "tokio_process" => {
             info!("Using TokioProcessPtyFactory implementation");

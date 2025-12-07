@@ -73,6 +73,7 @@ cargo run
 
 # Run with portable-pty implementation
 cargo run --features portable-pty
+cargo run --features expectrl-pty
 ```
 
 ## API Endpoints

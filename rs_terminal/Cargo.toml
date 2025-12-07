@@ -9,6 +9,7 @@ tokio = { version = "^1.48", features = ["full", "rt-multi-thread", "signal"] }
 
 # 跨平台 PTY 库
 portable-pty = { version = "^0.9", optional = true }
+expectrl = { version = "^0.8", optional = true }
 
 # Web框架与WebSocket
 axum = { version = "^0.7", features = ["ws"] }
@@ -51,6 +52,7 @@ tower-http = { version = "^0.5", features = ["cors"] }
 default = ["tokio-process"]
 tokio-process = []
 portable-pty = ["dep:portable-pty"]
+expectrl-pty = ["dep:expectrl"]
 
 [dev-dependencies]
 tokio = { version = "^1.48", features = ["full"] }
