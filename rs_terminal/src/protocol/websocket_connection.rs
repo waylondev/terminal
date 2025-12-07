@@ -54,31 +54,31 @@ impl TerminalConnection for WebSocketConnection {
             Some(Ok(Text(text))) => {
                 debug!("WebSocket received text message: {:?}", text);
                 Some(Ok(TerminalMessage::Text(text)))
-            },
+            }
             Some(Ok(Binary(bin))) => {
                 debug!("WebSocket received binary message, length: {}", bin.len());
                 Some(Ok(TerminalMessage::Binary(bin)))
-            },
+            }
             Some(Ok(Ping(ping))) => {
                 debug!("WebSocket received ping message");
                 Some(Ok(TerminalMessage::Ping(ping)))
-            },
+            }
             Some(Ok(Pong(_pong))) => {
                 debug!("WebSocket received pong message");
                 Some(Ok(TerminalMessage::Pong(())))
-            },
+            }
             Some(Ok(Close(_))) => {
                 debug!("WebSocket received close message");
                 Some(Ok(TerminalMessage::Close))
-            },
+            }
             Some(Err(e)) => {
                 error!("WebSocket receive error: {}", e);
                 Some(Err(Box::new(e) as Box<dyn std::error::Error + Send>))
-            },
+            }
             None => {
                 debug!("WebSocket connection closed");
                 None
-            },
+            }
         }
     }
 

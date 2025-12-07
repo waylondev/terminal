@@ -1,7 +1,7 @@
+use crate::config::TerminalConfig;
 /// PTY manager for managing PTY instances
 use crate::pty::{self, AsyncPty, PtyError};
-use crate::config::TerminalConfig;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// PTY manager responsible for managing PTY instances
 pub struct PtyManager;
@@ -13,12 +13,15 @@ impl PtyManager {
     }
 
     /// Create a new PTY instance using application configuration
-    pub async fn create_pty_from_config(&self, config: &TerminalConfig) -> Result<Box<dyn AsyncPty>, PtyError> {
+    pub async fn create_pty_from_config(
+        &self,
+        config: &TerminalConfig,
+    ) -> Result<Box<dyn AsyncPty>, PtyError> {
         match pty::create_pty_from_config(config).await {
             Ok(pty) => {
                 info!("Created new PTY instance from configuration");
                 Ok(pty)
-            },
+            }
             Err(e) => {
                 error!("Failed to create PTY from configuration: {}", e);
                 Err(e)
@@ -32,7 +35,7 @@ impl PtyManager {
             Ok(_) => {
                 info!("PTY killed successfully");
                 Ok(())
-            },
+            }
             Err(e) => {
                 error!("Failed to kill PTY: {}", e);
                 Err(e)

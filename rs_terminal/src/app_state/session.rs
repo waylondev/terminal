@@ -1,8 +1,7 @@
+use serde::{Deserialize, Serialize};
 /// Terminal session implementation
-
 use std::sync::Arc;
 use std::time::SystemTime;
-use serde::{Deserialize, Serialize};
 
 /// Terminal session state
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -31,34 +30,34 @@ pub enum ConnectionType {
 pub struct Session {
     /// Unique session ID
     pub session_id: String,
-    
+
     /// User ID associated with this session
     pub user_id: String,
-    
+
     /// Optional title for the session
     pub title: Option<String>,
-    
+
     /// Session status
     pub status: SessionStatus,
-    
+
     /// Terminal columns
     pub columns: u16,
-    
+
     /// Terminal rows
     pub rows: u16,
-    
+
     /// Working directory
     pub working_directory: Option<String>,
-    
+
     /// Shell type
     pub shell_type: String,
-    
+
     /// Connection type
     pub connection_type: ConnectionType,
-    
+
     /// Session creation timestamp (UNIX epoch in seconds)
     pub created_at: u64,
-    
+
     /// Session last updated timestamp (UNIX epoch in seconds)
     pub updated_at: u64,
 }
@@ -79,7 +78,7 @@ impl Session {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         Self {
             session_id,
             user_id,
@@ -94,7 +93,7 @@ impl Session {
             updated_at: now,
         }
     }
-    
+
     /// Update the terminal size
     pub fn resize(&mut self, columns: u16, rows: u16) {
         self.columns = columns;
@@ -104,7 +103,7 @@ impl Session {
             .unwrap()
             .as_secs();
     }
-    
+
     /// Update the session status
     pub fn set_status(&mut self, status: SessionStatus) {
         self.status = status;

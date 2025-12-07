@@ -1,10 +1,14 @@
 /// Server implementation for Waylon Terminal Rust backend
 use std::net::SocketAddr;
 
-use axum::{Router, http::{self, Method}, routing::{get, post, delete}};
+use axum::{
+    Router,
+    http::{self, Method},
+    routing::{delete, get, post},
+};
 use tokio::net::TcpListener;
-use tracing::info;
 use tower_http::cors::{Any, CorsLayer};
+use tracing::info;
 
 use crate::{app_state::AppState, handlers};
 
@@ -40,19 +44,20 @@ pub fn build_router(state: AppState) -> Router {
         ])
         // Allow all headers (now allowed since we're not using credentials)
         .allow_headers(Any);
-        // Removed allow_credentials(true) to comply with CORS spec
-        // When allow_credentials is true, you can't use wildcard for origin or headers
+    // Removed allow_credentials(true) to comply with CORS spec
+    // When allow_credentials is true, you can't use wildcard for origin or headers
 
     Router::new()
         // Health check endpoint
         .route("/", get(|| async { "Waylon Terminal - Rust Backend" }))
         .route("/health", get(handlers::rest::health_check))
-        
         // WebSocket endpoints for terminal communication
         // Support both /ws and /ws/:session_id formats
         .route("/ws", get(handlers::websocket::websocket_handler))
-        .route("/ws/:session_id", get(handlers::websocket::websocket_handler_with_id))
-        
+        .route(
+            "/ws/:session_id",
+            get(handlers::websocket::websocket_handler_with_id),
+        )
         // REST API endpoints for session management
         .nest("/api", api_routes())
         // Add CORS middleware layer
@@ -67,8 +72,14 @@ fn api_routes() -> Router<AppState> {
         .route("/sessions", post(handlers::rest::create_session))
         .route("/sessions", get(handlers::rest::get_all_sessions))
         .route("/sessions/:session_id", get(handlers::rest::get_session))
-        .route("/sessions/:session_id/resize", post(handlers::rest::resize_session))
-        .route("/sessions/:session_id", delete(handlers::rest::terminate_session))
+        .route(
+            "/sessions/:session_id/resize",
+            post(handlers::rest::resize_session),
+        )
+        .route(
+            "/sessions/:session_id",
+            delete(handlers::rest::terminate_session),
+        )
 }
 
 /// Run the HTTP server

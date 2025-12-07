@@ -1,40 +1,55 @@
-/// REST API handlers for terminal session management
-
-use axum::{extract::{State, Path, Json}, http::{StatusCode, Response}, routing::{get, post, delete}};
 use axum::response::IntoResponse;
+/// REST API handlers for terminal session management
+use axum::{
+    extract::{Json, Path, State},
+    http::{Response, StatusCode},
+    routing::{delete, get, post},
+};
 use serde_json::json;
-use tracing::{info, error};
+use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::{app_state::{AppState, Session, ConnectionType}, api::dto::{CreateSessionRequest, ResizeTerminalRequest, TerminalSession, ErrorResponse, SuccessResponse}, config::ResolvedShellConfig};
+use crate::{
+    api::dto::{
+        CreateSessionRequest, ErrorResponse, ResizeTerminalRequest, SuccessResponse,
+        TerminalSession,
+    },
+    app_state::{AppState, ConnectionType, Session},
+    config::ResolvedShellConfig,
+};
 
 /// Create a new terminal session
 pub async fn create_session(
     State(state): State<AppState>,
-    Json(req): Json<CreateSessionRequest>
+    Json(req): Json<CreateSessionRequest>,
 ) -> impl IntoResponse {
     info!("Creating new terminal session for user: {}", req.user_id);
-    
+
     // Generate a new session ID
     let session_id = Uuid::new_v4().to_string();
-    
+
     // Determine shell type (request > default)
-    let shell_type = req.shell_type.clone().unwrap_or_else(|| state.config.default_shell_type.clone());
-    
+    let shell_type = req
+        .shell_type
+        .clone()
+        .unwrap_or_else(|| state.config.default_shell_type.clone());
+
     // Get the complete resolved shell configuration (shell config > default config)
     let resolved_shell_config = state.config.get_shell_config(&shell_type);
-    
+
     // Determine final parameters with correct priority: request > resolved shell config
     let columns = req.columns.unwrap_or(resolved_shell_config.size.columns);
     let rows = req.rows.unwrap_or(resolved_shell_config.size.rows);
-    
+
     // Determine working directory: request > resolved shell config
     let working_directory = req.working_directory.clone().or_else(|| {
-        resolved_shell_config.working_directory.clone()
+        resolved_shell_config
+            .working_directory
+            .clone()
             // Convert PathBuf to String
             .map(|path| path.to_string_lossy().to_string())
     });
-    
+
     // Create session with properly resolved parameters
     let session = Session::new(
         session_id.clone(),
@@ -46,10 +61,10 @@ pub async fn create_session(
         rows,
         ConnectionType::WebSocket,
     );
-    
+
     // Add session to application state
     state.add_session(session.clone()).await;
-    
+
     // Map to API response DTO with correct field names
     let response = TerminalSession {
         id: session.session_id, // Use 'id' instead of 'session_id' to match frontend expectations
@@ -63,24 +78,23 @@ pub async fn create_session(
         connection_type: format!("{:?}", session.connection_type),
         created_at: session.created_at,
     };
-    
+
     info!("Created session: {}", session_id);
-    
+
     (StatusCode::CREATED, Json(response))
 }
 
 /// Get all terminal sessions
-pub async fn get_all_sessions(
-    State(state): State<AppState>
-) -> impl IntoResponse {
+pub async fn get_all_sessions(State(state): State<AppState>) -> impl IntoResponse {
     info!("Getting all terminal sessions");
-    
+
     // Get all sessions from app state
     let sessions = state.get_all_sessions().await;
-    
+
     // Map to API response DTOs
-    let response_sessions: Vec<TerminalSession> = sessions.into_iter().map(|session| {
-        TerminalSession {
+    let response_sessions: Vec<TerminalSession> = sessions
+        .into_iter()
+        .map(|session| TerminalSession {
             id: session.session_id,
             user_id: session.user_id,
             title: session.title,
@@ -91,19 +105,19 @@ pub async fn get_all_sessions(
             shell_type: session.shell_type,
             connection_type: format!("{:?}", session.connection_type),
             created_at: session.created_at,
-        }
-    }).collect();
-    
+        })
+        .collect();
+
     (StatusCode::OK, Json(response_sessions))
 }
 
 /// Get a specific terminal session by ID
 pub async fn get_session(
     State(state): State<AppState>,
-    Path(session_id): Path<String>
+    Path(session_id): Path<String>,
 ) -> impl IntoResponse {
     info!("Getting terminal session: {}", session_id);
-    
+
     // Get session from app state
     match state.get_session(&session_id).await {
         Some(session) => {
@@ -122,9 +136,9 @@ pub async fn get_session(
                     "createdAt": session.created_at, // Use camelCase
                 }
             );
-            
+
             (StatusCode::OK, Json(success_response))
-        },
+        }
         None => {
             // Return error as JSON value
             let error_response = json!(
@@ -134,7 +148,7 @@ pub async fn get_session(
                     "code": 404
                 }
             );
-            
+
             (StatusCode::NOT_FOUND, Json(error_response))
         }
     }
@@ -144,16 +158,19 @@ pub async fn get_session(
 pub async fn resize_session(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
-    Json(req): Json<ResizeTerminalRequest>
+    Json(req): Json<ResizeTerminalRequest>,
 ) -> impl IntoResponse {
-    info!("Resizing terminal session: {} to {}x{}", session_id, req.columns, req.rows);
-    
+    info!(
+        "Resizing terminal session: {} to {}x{}",
+        session_id, req.columns, req.rows
+    );
+
     // Get session from app state
     match state.get_session(&session_id).await {
         Some(mut session) => {
             // Update session size
             session.resize(req.columns, req.rows);
-            
+
             // Update session in app state
             if state.update_session(session.clone()).await {
                 // Return success response
@@ -165,7 +182,7 @@ pub async fn resize_session(
                         "success": true
                     }
                 );
-                
+
                 (StatusCode::OK, Json(success_response))
             } else {
                 // Return error if update failed
@@ -176,10 +193,10 @@ pub async fn resize_session(
                         "code": 500
                     }
                 );
-                
+
                 (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
             }
-        },
+        }
         None => {
             // Return error if session not found
             let error_response = json!(
@@ -189,7 +206,7 @@ pub async fn resize_session(
                     "code": 404
                 }
             );
-            
+
             (StatusCode::NOT_FOUND, Json(error_response))
         }
     }
@@ -198,10 +215,10 @@ pub async fn resize_session(
 /// Terminate a terminal session
 pub async fn terminate_session(
     State(state): State<AppState>,
-    Path(session_id): Path<String>
+    Path(session_id): Path<String>,
 ) -> impl IntoResponse {
     info!("Terminating terminal session: {}", session_id);
-    
+
     // Remove session from app state
     match state.remove_session(&session_id).await {
         Some(session) => {
@@ -213,9 +230,9 @@ pub async fn terminate_session(
                     "reason": "Session terminated by API request"
                 }
             );
-            
+
             (StatusCode::OK, Json(success_response))
-        },
+        }
         None => {
             // Return error if session not found
             let error_response = json!(
@@ -225,7 +242,7 @@ pub async fn terminate_session(
                     "code": 404
                 }
             );
-            
+
             (StatusCode::NOT_FOUND, Json(error_response))
         }
     }
@@ -233,8 +250,11 @@ pub async fn terminate_session(
 
 /// Health check endpoint
 pub async fn health_check() -> impl IntoResponse {
-    (StatusCode::OK, Json(SuccessResponse {
-        success: true,
-        message: "Health check passed".to_string()
-    }))
+    (
+        StatusCode::OK,
+        Json(SuccessResponse {
+            success: true,
+            message: "Health check passed".to_string(),
+        }),
+    )
 }

@@ -1,9 +1,9 @@
+use crate::config::{ConfigError, TerminalConfig};
 /// Configuration file loader for rs_terminal
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use tracing::info;
-use crate::config::{TerminalConfig, ConfigError};
 
 /// Configuration loader responsible for loading and parsing configuration files
 pub struct ConfigLoader;
@@ -25,16 +25,17 @@ impl ConfigLoader {
                     Some(path) => {
                         info!("Using default configuration file path: {:?}", path);
                         path
-                    },
+                    }
                     None => {
                         return Err(ConfigError::FileNotFound(
-                            "No configuration file path specified and default path not available".to_string()
+                            "No configuration file path specified and default path not available"
+                                .to_string(),
                         ));
                     }
                 }
             }
         };
-        
+
         // 从文件加载配置
         self.load_config_from_file(&config_file_path)
     }
@@ -42,12 +43,12 @@ impl ConfigLoader {
     /// Load configuration from a specific file path
     fn load_config_from_file(&self, path: &Path) -> Result<TerminalConfig, ConfigError> {
         info!("Loading configuration from file: {:?}", path);
-        
+
         let mut file = File::open(path)?;
-        
+
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
-        
+
         self.parse_config(&contents)
     }
 
@@ -57,10 +58,8 @@ impl ConfigLoader {
             Ok(config) => {
                 info!("Configuration parsed successfully");
                 Ok(config)
-            },
-            Err(e) => {
-                Err(ConfigError::ParseError(e))
             }
+            Err(e) => Err(ConfigError::ParseError(e)),
         }
     }
 }

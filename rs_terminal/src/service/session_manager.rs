@@ -1,6 +1,6 @@
 /// Session manager for managing terminal sessions
 use crate::app_state::AppState;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// Session manager responsible for managing terminal sessions
 pub struct SessionManager {
@@ -10,9 +10,7 @@ pub struct SessionManager {
 impl SessionManager {
     /// Create a new session manager
     pub fn new(app_state: AppState) -> Self {
-        Self {
-            app_state,
-        }
+        Self { app_state }
     }
 
     /// Get the current number of sessions

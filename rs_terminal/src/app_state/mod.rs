@@ -3,4 +3,4 @@ mod app_state;
 mod session;
 
 pub use app_state::AppState;
-pub use session::{Session, SessionStatus, ConnectionType};
+pub use session::{ConnectionType, Session, SessionStatus};

@@ -1,10 +1,13 @@
+use tokio::io::AsyncReadExt;
 /// Terminal session handler for processing terminal connections
 use tokio::select;
-use tokio::io::AsyncReadExt;
 use tracing::{error, info};
 
-use crate::{app_state::{AppState, Session, SessionStatus, ConnectionType}, protocol::TerminalConnection};
-use super::{PtyManager, MessageHandler};
+use super::{MessageHandler, PtyManager};
+use crate::{
+    app_state::{AppState, ConnectionType, Session, SessionStatus},
+    protocol::TerminalConnection,
+};
 
 /// Handle a terminal session using the TerminalConnection trait
 pub async fn handle_terminal_session(mut connection: impl TerminalConnection, state: AppState) {
@@ -28,11 +31,11 @@ pub async fn handle_terminal_session(mut connection: impl TerminalConnection, st
             session.set_status(SessionStatus::Active);
             state.update_session(session.clone()).await;
             session
-        },
+        }
         None => {
             // Get default shell command from config
             let shell_type = state.config.default_shell_type.clone();
-            
+
             // Create a new session if it doesn't exist
             let session = Session::new(
                 conn_id.clone(),
@@ -148,7 +151,7 @@ pub async fn handle_terminal_session(mut connection: impl TerminalConnection, st
         session.set_status(SessionStatus::Terminated);
         state.update_session(session.clone()).await;
     }
-    
+
     // Remove session from state after a short delay (allowing time for cleanup)
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     state.remove_session(&conn_id).await;

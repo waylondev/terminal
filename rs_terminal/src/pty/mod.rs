@@ -1,7 +1,6 @@
 /// PTY (Pseudo Terminal) handling for Waylon Terminal
 /// This module provides a trait abstraction for different PTY implementations
 /// with a focus on pure async operations
-
 mod pty_trait;
 mod tokio_process_pty_impl;
 
@@ -9,10 +8,10 @@ mod tokio_process_pty_impl;
 pub use pty_trait::*;
 pub use tokio_process_pty_impl::{TokioProcessPty, TokioProcessPtyFactory};
 
-
-
 /// Create a new PTY instance using configuration from the application config
-pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) -> Result<Box<dyn AsyncPty>, PtyError> {
+pub async fn create_pty_from_config(
+    app_config: &crate::config::TerminalConfig,
+) -> Result<Box<dyn AsyncPty>, PtyError> {
     // Get default shell configuration
     let default_shell_type = &app_config.default_shell_type;
     let shell_config = match app_config.shells.get(default_shell_type) {
@@ -22,26 +21,35 @@ pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) 
             match app_config.shells.get("bash") {
                 Some(config) => config,
                 None => {
-                    return Err(PtyError::Other(format!("No shell configuration found for default shell: {}", default_shell_type)));
+                    return Err(PtyError::Other(format!(
+                        "No shell configuration found for default shell: {}",
+                        default_shell_type
+                    )));
                 }
             }
         }
     };
-    
+
     // Extract command and arguments from shell config (command is required for each shell)
     let command = shell_config.command[0].clone();
     let args: Vec<String> = shell_config.command.iter().skip(1).cloned().collect();
-    
+
     // Determine working directory with priority: shell_config.working_directory > default_shell_config.working_directory
-    let working_directory = shell_config.working_directory.clone()
+    let working_directory = shell_config
+        .working_directory
+        .clone()
         .or_else(|| app_config.default_shell_config.working_directory.clone());
-    
+
     // Determine terminal size with priority: shell_config.size > default_shell_config.size
-    let terminal_size = shell_config.size.as_ref().unwrap_or(&app_config.default_shell_config.size).clone();
-    
+    let terminal_size = shell_config
+        .size
+        .as_ref()
+        .unwrap_or(&app_config.default_shell_config.size)
+        .clone();
+
     // Determine environment variables with priority: shell_config.environment > default_shell_config.environment
     let mut environment = Vec::new();
-    
+
     // Add default environment variables from default_shell_config
     if let Some(default_env) = &app_config.default_shell_config.environment {
         environment.reserve(default_env.len());
@@ -49,7 +57,7 @@ pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) 
             environment.push((key.clone(), value.clone()));
         }
     }
-    
+
     // Add explicit environment variables from shell config, overwriting defaults
     if let Some(shell_env) = &shell_config.environment {
         environment.reserve(environment.len() + shell_env.len());
@@ -62,7 +70,7 @@ pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) 
             }
         }
     }
-    
+
     // Create PTY config
     let pty_config = PtyConfig {
         command: command,
@@ -72,7 +80,7 @@ pub async fn create_pty_from_config(app_config: &crate::config::TerminalConfig) 
         env: environment,
         cwd: working_directory,
     };
-    
+
     // 使用Tokio Process PTY实现
     let factory = TokioProcessPtyFactory::default();
     let pty = factory.create(&pty_config).await?;
@@ -88,7 +96,7 @@ pub async fn create_pty_with_config(config: &PtyConfig) -> Result<Box<dyn AsyncP
 /// Create a new PTY instance using a specific factory
 pub async fn create_pty_with_factory(
     factory: &dyn PtyFactory,
-    config: &PtyConfig
+    config: &PtyConfig,
 ) -> Result<Box<dyn AsyncPty>, PtyError> {
     factory.create(config).await
 }

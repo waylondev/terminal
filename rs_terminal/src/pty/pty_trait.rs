@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{self, AsyncRead, AsyncWrite, ReadBuf};
 use thiserror::Error;
+use tokio::io::{self, AsyncRead, AsyncWrite, ReadBuf};
 
 // ================ 配置与错误类型 ================
 
@@ -15,8 +15,6 @@ pub struct PtyConfig {
     pub env: Vec<(String, String)>,
     pub cwd: Option<std::path::PathBuf>,
 }
-
-
 
 #[derive(Debug, Error)]
 pub enum PtyError {
@@ -48,16 +46,16 @@ impl From<anyhow::Error> for PtyError {
 pub trait AsyncPty: AsyncRead + AsyncWrite + Send + Sync + Unpin {
     /// 调整终端大小
     async fn resize(&mut self, cols: u16, rows: u16) -> Result<(), PtyError>;
-    
+
     /// 获取进程ID（如果可用）
     fn pid(&self) -> Option<u32>;
-    
+
     /// 检查进程是否存活
     fn is_alive(&self) -> bool;
-    
+
     /// 等待进程结束（非阻塞检查）
     async fn try_wait(&mut self) -> Result<Option<std::process::ExitStatus>, PtyError>;
-    
+
     /// 立即终止进程
     async fn kill(&mut self) -> Result<(), PtyError>;
 }
@@ -67,7 +65,7 @@ pub trait AsyncPty: AsyncRead + AsyncWrite + Send + Sync + Unpin {
 pub trait PtyFactory: Send + Sync {
     /// 创建新的PTY实例
     async fn create(&self, config: &PtyConfig) -> Result<Box<dyn AsyncPty>, PtyError>;
-    
+
     /// 工厂名称
     fn name(&self) -> &'static str;
 }

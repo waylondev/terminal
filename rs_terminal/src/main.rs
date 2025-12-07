@@ -1,7 +1,7 @@
+mod api;
 /// Main entry point for Waylon Terminal Rust backend
 // Import modules
 mod app_state;
-mod api;
 mod config;
 mod handlers;
 mod protocol;
@@ -11,7 +11,7 @@ mod service;
 
 // Use public API from modules
 use app_state::AppState;
-use config::{init_logging, ConfigLoader};
+use config::{ConfigLoader, init_logging};
 use server::{build_router, run_server, start_webtransport_service};
 
 #[tokio::main]
@@ -21,7 +21,8 @@ async fn main() {
 
     // Load configuration
     let config_loader = ConfigLoader::new();
-    let config = match config_loader.load_config(None) { // Use None for default path
+    let config = match config_loader.load_config(None) {
+        // Use None for default path
         Ok(config) => config,
         Err(e) => {
             eprintln!("Failed to load configuration: {}", e);

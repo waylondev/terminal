@@ -1,9 +1,9 @@
+use crate::app_state::Session;
+use crate::config::TerminalConfig;
+use std::collections::HashMap;
 /// Application state implementation for Waylon Terminal Rust backend
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
-use crate::config::TerminalConfig;
-use crate::app_state::Session;
 
 /// Application state containing shared data across handlers
 #[derive(Clone)]
@@ -22,25 +22,25 @@ impl AppState {
             config: Arc::new(config),
         }
     }
-    
+
     /// Add a new session to the state
     pub async fn add_session(&self, session: Session) {
         let mut sessions = self.sessions.lock().await;
         sessions.insert(session.session_id.clone(), session);
     }
-    
+
     /// Get a session by ID
     pub async fn get_session(&self, session_id: &str) -> Option<Session> {
         let sessions = self.sessions.lock().await;
         sessions.get(session_id).cloned()
     }
-    
+
     /// Remove a session by ID
     pub async fn remove_session(&self, session_id: &str) -> Option<Session> {
         let mut sessions = self.sessions.lock().await;
         sessions.remove(session_id)
     }
-    
+
     /// Update an existing session
     pub async fn update_session(&self, session: Session) -> bool {
         let mut sessions = self.sessions.lock().await;
@@ -51,13 +51,13 @@ impl AppState {
             false
         }
     }
-    
+
     /// Get all sessions
     pub async fn get_all_sessions(&self) -> Vec<Session> {
         let sessions = self.sessions.lock().await;
         sessions.values().cloned().collect()
     }
-    
+
     /// Get the number of active sessions
     pub async fn session_count(&self) -> usize {
         let sessions = self.sessions.lock().await;
