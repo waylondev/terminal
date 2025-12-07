@@ -40,7 +40,8 @@ pub fn build_router(state: AppState) -> Router {
             Method::DELETE,
             Method::OPTIONS,
             // WebSocket upgrade method
-            Method::from_bytes(b"UPGRADE").unwrap(),
+            // 使用 unwrap_or 提供默认值，确保编译通过
+            Method::from_bytes(b"UPGRADE").unwrap_or(Method::OPTIONS),
         ])
         // Allow all headers (now allowed since we're not using credentials)
         .allow_headers(Any);

@@ -67,5 +67,7 @@ impl ConfigLoader {
 /// Default configuration path
 pub fn default_config_path() -> Option<std::path::PathBuf> {
     // 使用当前工作目录作为默认配置文件目录
-    Some(std::env::current_dir().unwrap().join("config.toml"))
+    std::env::current_dir()
+        .ok()
+        .map(|dir| dir.join("config.toml"))
 }
