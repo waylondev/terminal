@@ -9,7 +9,10 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    api::dto::{CreateSessionRequest, ErrorResponse, ResizeTerminalRequest, SuccessResponse, TerminalResizeResponse, TerminalSession, TerminalTerminateResponse},
+    api::dto::{
+        CreateSessionRequest, ErrorResponse, ResizeTerminalRequest, SuccessResponse,
+        TerminalResizeResponse, TerminalSession, TerminalTerminateResponse,
+    },
     app_state::{AppState, ConnectionType, Session},
 };
 
@@ -140,7 +143,10 @@ pub async fn get_session(
                 code: Some(404),
             };
 
-            (StatusCode::NOT_FOUND, Json(to_value(error_response).unwrap()))
+            (
+                StatusCode::NOT_FOUND,
+                Json(to_value(error_response).unwrap()),
+            )
         }
     }
 }
@@ -181,7 +187,10 @@ pub async fn resize_session(
                     code: Some(500),
                 };
 
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(to_value(error_response).unwrap()))
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(to_value(error_response).unwrap()),
+                )
             }
         }
         None => {
@@ -192,7 +201,10 @@ pub async fn resize_session(
                 code: Some(404),
             };
 
-            (StatusCode::NOT_FOUND, Json(to_value(error_response).unwrap()))
+            (
+                StatusCode::NOT_FOUND,
+                Json(to_value(error_response).unwrap()),
+            )
         }
     }
 }
@@ -224,7 +236,10 @@ pub async fn terminate_session(
                 code: Some(404),
             };
 
-            (StatusCode::NOT_FOUND, Json(to_value(error_response).unwrap()))
+            (
+                StatusCode::NOT_FOUND,
+                Json(to_value(error_response).unwrap()),
+            )
         }
     }
 }

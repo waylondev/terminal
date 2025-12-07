@@ -1,6 +1,6 @@
 use crate::pty::pty_trait::{AsyncPty, PtyConfig, PtyError, PtyFactory};
 use async_trait::async_trait;
-use portable_pty::{PtySize, CommandBuilder, Child};
+use portable_pty::{Child, CommandBuilder, PtySize};
 use std::pin::Pin;
 use std::process::ExitStatus as StdExitStatus;
 use std::task::{Context, Poll};
@@ -38,12 +38,12 @@ impl PortablePty {
         // Create command builder
         let mut cmd = CommandBuilder::new(config.command.clone());
         cmd.args(&config.args);
-        
+
         // Set environment variables
         for (key, value) in &config.env {
             cmd.env(key, value);
         }
-        
+
         // Set working directory if provided
         if let Some(cwd) = &config.cwd {
             cmd.cwd(cwd);
@@ -87,10 +87,7 @@ impl AsyncWrite for PortablePty {
         Poll::Ready(Ok(buf.len()))
     }
 
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         // 简单实现，直接返回成功
         Poll::Ready(Ok(()))
     }
@@ -110,7 +107,7 @@ impl AsyncPty for PortablePty {
     /// 调整终端大小
     async fn resize(&mut self, cols: u16, rows: u16) -> Result<(), PtyError> {
         info!("PortablePty: Resizing PTY to {}x{}", cols, rows);
-        
+
         let master = self.master.lock().await;
         master.resize(PtySize {
             rows,
@@ -118,7 +115,7 @@ impl AsyncPty for PortablePty {
             pixel_width: 0,
             pixel_height: 0,
         })?;
-        
+
         self.cols = cols;
         self.rows = rows;
         Ok(())
@@ -138,17 +135,17 @@ impl AsyncPty for PortablePty {
     /// 等待进程结束（非阻塞检查）
     async fn try_wait(&mut self) -> Result<Option<StdExitStatus>, PtyError> {
         let mut child = self.child.lock().await;
-        
+
         if self.child_exited {
             return Ok(None);
         }
-        
+
         match child.try_wait()? {
             Some(_status) => {
                 self.child_exited = true;
                 // portable-pty 的 ExitStatus 与 std::process::ExitStatus 不同，返回一个简单的成功状态
                 Ok(Some(StdExitStatus::default()))
-            },
+            }
             None => Ok(None),
         }
     }
@@ -156,7 +153,7 @@ impl AsyncPty for PortablePty {
     /// 立即终止进程
     async fn kill(&mut self) -> Result<(), PtyError> {
         info!("PortablePty: Killing child process");
-        
+
         let mut child = self.child.lock().await;
         child.kill()?;
         self.child_exited = true;
