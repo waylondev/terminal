@@ -7,14 +7,15 @@ edition = "2024"
 # 异步运行时
 tokio = { version = "~1.40", features = ["full", "rt-multi-thread", "signal"] }
 
+# 跨平台 PTY 库
+portable-pty = "~0.9"
+
 # Web框架与WebSocket
 axum = { version = "~0.7", features = ["ws"] }
 
 # WebTransport
 wtransport = "~0.6"
 quinn = { version = "~0.11", features = ["rustls"] }
-
-# PTY实现 (使用tokio-process，跨平台兼容)
 
 # 异步工具与抽象
 tokio-util = { version = "~0.7", features = ["io", "compat"] }

@@ -17,6 +17,9 @@ pub struct TerminalConfig {
     /// WebTransport server port
     pub webtransport_port: u16,
 
+    /// PTY implementation to use (options: "tokio_process", "portable_pty")
+    pub pty_implementation: String,
+
     /// Default shell configuration (used as fallback for all shells)
     pub default_shell_config: DefaultShellConfig,
 

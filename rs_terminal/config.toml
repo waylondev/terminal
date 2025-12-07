@@ -12,6 +12,9 @@ http_port = 8080
 # WebTransport server port
 webtransport_port = 8082
 
+# PTY implementation to use (options: "tokio_process", "portable_pty")
+pty_implementation = "tokio_process"
+
 # Default shell configuration (used as fallback for all shells)
 [default_shell_config]
 size.columns = 80

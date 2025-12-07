@@ -8,6 +8,19 @@ mod tokio_process_pty_impl;
 pub use pty_trait::*;
 pub use tokio_process_pty_impl::TokioProcessPtyFactory;
 
+use tracing::info;
+
+/// Get the PTY factory based on configuration
+/// This function allows dynamic selection of PTY implementation from configuration
+pub fn get_pty_factory(implementation_name: &str) -> Box<dyn PtyFactory + Send + Sync> {
+    match implementation_name.to_lowercase().as_str() {
+        "tokio_process" | _ => {
+            info!("Using TokioProcessPtyFactory implementation");
+            Box::new(TokioProcessPtyFactory)
+        }
+    }
+}
+
 /// Create a new PTY instance using configuration from the application config
 pub async fn create_pty_from_config(
     app_config: &crate::config::TerminalConfig,
@@ -81,16 +94,17 @@ pub async fn create_pty_from_config(
         cwd: working_directory,
     };
 
-    // 使用Tokio Process PTY实现
-    let factory = TokioProcessPtyFactory;
+    // Get PTY factory based on configuration
+    let factory = get_pty_factory(&app_config.pty_implementation);
     let pty = factory.create(&pty_config).await?;
     Ok(pty)
 }
 
 /// Create a new PTY instance with custom configuration
+/// This function uses the default PTY implementation (tokio_process)
 pub async fn create_pty_with_config(config: &PtyConfig) -> Result<Box<dyn AsyncPty>, PtyError> {
-    // 使用Tokio Process PTY实现
-    let factory = TokioProcessPtyFactory;
+    // 使用默认的PTY实现
+    let factory = get_pty_factory("tokio_process");
     factory.create(config).await
 }
 
