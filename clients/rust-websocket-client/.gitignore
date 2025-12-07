@@ -40,3 +40,4 @@ static/
 
 Cargo.lock
 logs/
+portable-pty/
