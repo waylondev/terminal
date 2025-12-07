@@ -4,12 +4,12 @@ use axum::{
     extract::{Json, Path, State},
     http::StatusCode,
 };
-use serde_json::json;
+use serde_json::to_value;
 use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    api::dto::{CreateSessionRequest, ResizeTerminalRequest, SuccessResponse, TerminalSession},
+    api::dto::{CreateSessionRequest, ErrorResponse, ResizeTerminalRequest, SuccessResponse, TerminalResizeResponse, TerminalSession, TerminalTerminateResponse},
     app_state::{AppState, ConnectionType, Session},
 };
 
@@ -106,7 +106,7 @@ pub async fn get_all_sessions(State(state): State<AppState>) -> impl IntoRespons
     (StatusCode::OK, Json(response_sessions))
 }
 
-/// Get a specific terminal session by ID
+/// Get a specific terminal session
 pub async fn get_session(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
@@ -116,35 +116,31 @@ pub async fn get_session(
     // Get session from app state
     match state.get_session(&session_id).await {
         Some(session) => {
-            // Return success as JSON value with correct field names
-            let success_response = json!(
-                {
-                    "id": session.id, // Use 'id' instead of 'session_id'
-                    "userId": session.user_id, // Use camelCase for all fields
-                    "title": session.title,
-                    "status": format!("{:?}", session.status).to_lowercase(),
-                    "columns": session.columns,
-                    "rows": session.rows,
-                    "workingDirectory": session.working_directory, // Use camelCase and let serde handle null values
-                    "shellType": session.shell_type, // Use camelCase
-                    "connectionType": format!("{:?}", session.connection_type), // Use camelCase
-                    "createdAt": session.created_at, // Use camelCase
-                }
-            );
+            // Map to API response DTO with correct field names
+            let response = TerminalSession {
+                id: session.id, // Use 'id' instead of 'session_id' to match frontend expectations
+                user_id: session.user_id,
+                title: session.title,
+                status: format!("{:?}", session.status).to_lowercase(),
+                columns: session.columns,
+                rows: session.rows,
+                working_directory: session.working_directory,
+                shell_type: session.shell_type,
+                connection_type: format!("{:?}", session.connection_type),
+                created_at: session.created_at,
+            };
 
-            (StatusCode::OK, Json(success_response))
+            (StatusCode::OK, Json(to_value(response).unwrap()))
         }
         None => {
-            // Return error as JSON value
-            let error_response = json!(
-                {
-                    "error": true,
-                    "message": format!("Session not found: {}", session_id),
-                    "code": 404
-                }
-            );
+            // Return error using ErrorResponse struct
+            let error_response = ErrorResponse {
+                error: true,
+                message: format!("Session not found: {}", session_id),
+                code: Some(404),
+            };
 
-            (StatusCode::NOT_FOUND, Json(error_response))
+            (StatusCode::NOT_FOUND, Json(to_value(error_response).unwrap()))
         }
     }
 }
@@ -168,41 +164,35 @@ pub async fn resize_session(
 
             // Update session in app state
             if state.update_session(session.clone()).await {
-                // Return success response
-                let success_response = json!(
-                    {
-                        "session_id": session_id,
-                        "columns": req.columns,
-                        "rows": req.rows,
-                        "success": true
-                    }
-                );
+                // Return success response using TerminalResizeResponse struct
+                let success_response = TerminalResizeResponse {
+                    session_id,
+                    columns: req.columns,
+                    rows: req.rows,
+                    success: true,
+                };
 
-                (StatusCode::OK, Json(success_response))
+                (StatusCode::OK, Json(to_value(success_response).unwrap()))
             } else {
                 // Return error if update failed
-                let error_response = json!(
-                    {
-                        "error": true,
-                        "message": format!("Failed to update session: {}", session_id),
-                        "code": 500
-                    }
-                );
+                let error_response = ErrorResponse {
+                    error: true,
+                    message: format!("Failed to update session: {}", session_id),
+                    code: Some(500),
+                };
 
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(to_value(error_response).unwrap()))
             }
         }
         None => {
             // Return error if session not found
-            let error_response = json!(
-                {
-                    "error": true,
-                    "message": format!("Session not found: {}", session_id),
-                    "code": 404
-                }
-            );
+            let error_response = ErrorResponse {
+                error: true,
+                message: format!("Session not found: {}", session_id),
+                code: Some(404),
+            };
 
-            (StatusCode::NOT_FOUND, Json(error_response))
+            (StatusCode::NOT_FOUND, Json(to_value(error_response).unwrap()))
         }
     }
 }
@@ -217,28 +207,24 @@ pub async fn terminate_session(
     // Remove session from app state
     match state.remove_session(&session_id).await {
         Some(_session) => {
-            // Return success response
-            let success_response = json!(
-                {
-                    "session_id": session_id,
-                    "success": true,
-                    "reason": "Session terminated by API request"
-                }
-            );
+            // Return success response using TerminalTerminateResponse struct
+            let success_response = TerminalTerminateResponse {
+                session_id,
+                success: true,
+                reason: "Session terminated by API request".to_string(),
+            };
 
-            (StatusCode::OK, Json(success_response))
+            (StatusCode::OK, Json(to_value(success_response).unwrap()))
         }
         None => {
-            // Return error if session not found
-            let error_response = json!(
-                {
-                    "error": true,
-                    "message": format!("Session not found: {}", session_id),
-                    "code": 404
-                }
-            );
+            // Return error using ErrorResponse struct
+            let error_response = ErrorResponse {
+                error: true,
+                message: format!("Session not found: {}", session_id),
+                code: Some(404),
+            };
 
-            (StatusCode::NOT_FOUND, Json(error_response))
+            (StatusCode::NOT_FOUND, Json(to_value(error_response).unwrap()))
         }
     }
 }

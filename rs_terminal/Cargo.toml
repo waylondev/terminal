@@ -5,47 +5,47 @@ edition = "2024"
 
 [dependencies]
 # 异步运行时
-tokio = { version = "~1.40", features = ["full", "rt-multi-thread", "signal"] }
+tokio = { version = "^1.48", features = ["full", "rt-multi-thread", "signal"] }
 
 # 跨平台 PTY 库
-portable-pty = { version = "~0.9", optional = true }
+portable-pty = { version = "^0.9", optional = true }
 
 # Web框架与WebSocket
-axum = { version = "~0.7", features = ["ws"] }
+axum = { version = "^0.7", features = ["ws"] }
 
 # WebTransport
-wtransport = "~0.6"
-quinn = { version = "~0.11", features = ["rustls"] }
+wtransport = "^0.6"
+quinn = { version = "^0.11", features = ["rustls"] }
 
 # 异步工具与抽象
-tokio-util = { version = "~0.7", features = ["io", "compat"] }
-async-trait = "0.1"
+tokio-util = { version = "^0.7", features = ["io", "compat"] }
+async-trait = "^0.1"
 
 # 配置管理
-config = "~0.14"
-serde = { version = "~1.0", features = ["derive"] }
-toml = "~0.8"
-dotenvy = "~0.15"
+config = "^0.15"
+serde = { version = "^1.0", features = ["derive"] }
+toml = "^0.8"
+dotenvy = "^0.15"
 
 # 日志与追踪
-tracing = "~0.1"
-tracing-subscriber = { version = "~0.3", features = ["env-filter", "json"] }
-tracing-appender = "~0.2"
+tracing = "^0.1"
+tracing-subscriber = { version = "^0.3", features = ["env-filter", "json"] }
+tracing-appender = "^0.2"
 
 # 错误处理与工具
-thiserror = "~1.0"
-anyhow = "~1.0"
-futures-util = "~0.3"
+thiserror = "^1.0"
+anyhow = "^1.0"
+futures-util = "^0.3"
 
 # 证书生成与UUID
-rcgen = "~0.11"
-uuid = { version = "~1.8", features = ["v4"] }
+rcgen = "^0.12"
+uuid = { version = "^1.8", features = ["v4"] }
 
 # 序列化
-serde_json = "~1.0"
+serde_json = "^1.0"
 
 # CORS support
-tower-http = { version = "~0.5", features = ["cors"] }
+tower-http = { version = "^0.5", features = ["cors"] }
 
 [features]
 default = ["tokio-process"]
@@ -53,4 +53,4 @@ tokio-process = []
 portable-pty = ["dep:portable-pty"]
 
 [dev-dependencies]
-tokio = { version = "~1.40", features = ["full"] }
+tokio = { version = "^1.48", features = ["full"] }
