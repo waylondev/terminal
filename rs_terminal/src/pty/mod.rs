@@ -5,16 +5,12 @@ mod portable_pty_impl;
 /// with a focus on pure async operations
 mod pty_trait;
 mod tokio_process_pty_impl;
-#[cfg(feature = "tokio-pty-process")]
-mod tokio_pty_process_pty_impl;
 
 // Export all public types and traits
 #[cfg(feature = "portable-pty")]
 pub use portable_pty_impl::PortablePtyFactory;
 pub use pty_trait::*;
 pub use tokio_process_pty_impl::TokioProcessPtyFactory;
-#[cfg(feature = "tokio-pty-process")]
-pub use tokio_pty_process_pty_impl::TokioPtyProcessPtyFactory;
 
 use tracing::info;
 
@@ -30,11 +26,6 @@ pub fn get_pty_factory(implementation_name: &str) -> Box<dyn PtyFactory + Send +
         "tokio_process" => {
             info!("Using TokioProcessPtyFactory implementation");
             Box::new(TokioProcessPtyFactory)
-        }
-        #[cfg(feature = "tokio-pty-process")]
-        "tokio_pty_process" => {
-            info!("Using TokioPtyProcessPtyFactory implementation");
-            Box::new(TokioPtyProcessPtyFactory)
         }
         _ => {
             info!("Using default PTY implementation (TokioProcessPtyFactory)");

@@ -8,7 +8,6 @@ edition = "2024"
 tokio = { version = "~1.40", features = ["full", "rt-multi-thread", "signal"] }
 
 # 跨平台 PTY 库
-tokio-pty-process = { version = "~0.4", optional = true }
 portable-pty = { version = "~0.9", optional = true }
 
 # Web框架与WebSocket
@@ -51,7 +50,6 @@ tower-http = { version = "~0.5", features = ["cors"] }
 [features]
 default = ["tokio-process"]
 tokio-process = []
-tokio-pty-process = ["dep:tokio-pty-process"]
 portable-pty = ["dep:portable-pty"]
 
 [dev-dependencies]

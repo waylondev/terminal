@@ -16,8 +16,7 @@ A Rust-based terminal backend for Waylon Terminal, supporting multiple PTY imple
 rs_terminal supports multiple PTY implementations, which can be selected via the `config.toml` file:
 
 1. **tokio_process** - Default implementation using standard process I/O, cross-platform compatible
-2. **tokio_pty_process** - Real PTY support for Unix-like systems using `tokio-pty-process` library
-3. **portable_pty** - Cross-platform PTY support using `portable-pty` library
+2. **portable_pty** - Cross-platform PTY support using `portable-pty` library
 
 ## Getting Started
 
@@ -44,14 +43,8 @@ cargo build
 3. Build with specific PTY implementation features:
 
 ```bash
-# Build with tokio-pty-process support
-cargo build --features tokio-pty-process
-
 # Build with portable-pty support
 cargo build --features portable-pty
-
-# Build with both implementations
-cargo build --features tokio-pty-process,portable-pty
 ```
 
 ### Configuration
@@ -78,8 +71,8 @@ webtransport_port = 8082
 # Run with default features
 cargo run
 
-# Run with specific PTY implementation
-cargo run --features tokio-pty-process
+# Run with portable-pty implementation
+cargo run --features portable-pty
 ```
 
 ## API Endpoints
@@ -111,8 +104,7 @@ rs_terminal/
 │   │   ├── mod.rs              # PTY factory and trait definitions
 │   │   ├── portable_pty_impl.rs # portable-pty implementation
 │   │   ├── pty_trait.rs        # AsyncPty trait definition
-│   │   ├── tokio_process_pty_impl.rs  # tokio-process implementation
-│   │   └── tokio_pty_process_pty_impl.rs # tokio-pty-process implementation
+│   │   └── tokio_process_pty_impl.rs  # tokio-process implementation
 │   ├── server/         # HTTP server setup
 │   ├── service/        # Business logic services
 │   └── main.rs         # Application entry point
@@ -122,7 +114,6 @@ rs_terminal/
 
 ## Feature Flags
 
-- `tokio-pty-process` - Enable tokio-pty-process PTY implementation
 - `portable-pty` - Enable portable-pty PTY implementation
 
 ## Contributing
