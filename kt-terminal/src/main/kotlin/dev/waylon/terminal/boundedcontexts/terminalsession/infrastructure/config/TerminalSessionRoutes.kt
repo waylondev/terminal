@@ -234,17 +234,17 @@ fun Application.configureTerminalSessionRoutes() {
                         HttpStatusCode.BadRequest,
                         mapOf("error" to "Invalid session ID")
                     )
-                    
+
                     val filePath = call.request.queryParameters["filePath"] ?: return@get call.respond(
                         HttpStatusCode.BadRequest,
                         mapOf("error" to "Missing file path parameter")
                     )
-                    
+
                     log.debug("Downloading file for session {}: {}", id, filePath)
                     try {
                         // Get the session to validate it exists
-                        val session = getTerminalSessionByIdUseCase(id)
-                        
+                        getTerminalSessionByIdUseCase(id)
+
                         // Create a file object
                         val file = java.io.File(filePath)
                         if (!file.exists() || !file.isFile) {
@@ -253,15 +253,15 @@ fun Application.configureTerminalSessionRoutes() {
                                 mapOf("error" to "File not found: $filePath")
                             )
                         }
-                        
+
                         // Read file content
                         val fileBytes = file.readBytes()
-                        
-                        // Set headers for download
-                        call.response.headers.append("Content-Disposition", "attachment; filename=${file.name}")
+
+                        // Set headers for download - ensure filename is properly quoted
+                        call.response.headers.append("Content-Disposition", "attachment; filename=\"${file.name}\"")
                         call.response.headers.append("Content-Type", "application/octet-stream")
                         call.response.headers.append("Content-Length", fileBytes.size.toString())
-                        
+
                         // Send file content
                         call.respondBytes(fileBytes, ContentType.Application.OctetStream, HttpStatusCode.OK)
                     } catch (e: TerminalSessionNotFoundException) {

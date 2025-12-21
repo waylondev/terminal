@@ -150,12 +150,18 @@ function App() {
   };
 
   const handleDownloadFile = () => {
+    console.log('🎯 handleDownloadFile called, opening modal');
     setShowDownloadModal(true);
   };
 
   const handleDownloadFileWithPath = (filePath: string) => {
+    console.log('🎯 handleDownloadFileWithPath called with filePath:', filePath);
+    console.log('🎯 terminalRef.current:', terminalRef.current);
     if (terminalRef.current && terminalRef.current.downloadFile) {
+      console.log('🎯 Calling terminalRef.current.downloadFile');
       terminalRef.current.downloadFile(filePath);
+    } else {
+      console.error('❌ terminalRef.current or downloadFile method not available');
     }
   };
 

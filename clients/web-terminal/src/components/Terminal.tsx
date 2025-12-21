@@ -42,14 +42,17 @@ const TerminalComponent = forwardRef<any, TerminalComponentProps>(({ className, 
       }
     },
     downloadFile: (filePath: string) => {
+      console.log('🎯 Terminal.downloadFile called with filePath:', filePath);
       const currentSessionId = sessionIdRef.current;
+      console.log('🎯 currentSessionId:', currentSessionId);
       if (!currentSessionId) {
-        console.error('Failed to download file: No session ID available');
+        console.error('❌ Failed to download file: No session ID available');
         alert('Failed to download file: No session ID available');
         return;
       }
+      console.log('🎯 Calling apiDownloadFile with sessionId:', currentSessionId, 'and filePath:', filePath);
       apiDownloadFile(currentSessionId, filePath).catch(error => {
-        console.error('Failed to download file:', error);
+        console.error('❌ Failed to download file:', error);
         alert(`Failed to download file: ${error.message}`);
       });
     },
