@@ -23,6 +23,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import java.io.File
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -53,8 +54,16 @@ data class TerminalTerminateResponse(
 )
 
 @Serializable
-data class TerminalStatusResponse(
+class TerminalStatusResponse(
     val status: String
+)
+
+/**
+ * Request data classes
+ */
+@Serializable
+class DownloadFileRequest(
+    val filePath: String
 )
 
 /**
@@ -228,27 +237,33 @@ fun Application.configureTerminalSessionRoutes() {
                     }
                 }
 
-                // Download file from terminal session
-                get("/{id}/download") {
-                    val id = call.parameters["id"] ?: return@get call.respond(
+                // Download file from terminal session - using POST to avoid URL encoding issues
+                post("/{id}/download") {
+                    val id = call.parameters["id"] ?: return@post call.respond(
                         HttpStatusCode.BadRequest,
                         mapOf("error" to "Invalid session ID")
                     )
 
-                    val filePath = call.request.queryParameters["filePath"] ?: return@get call.respond(
-                        HttpStatusCode.BadRequest,
-                        mapOf("error" to "Missing file path parameter")
-                    )
+                    val downloadRequest = try {
+                        call.receive<DownloadFileRequest>()
+                    } catch (e: Exception) {
+                        return@post call.respond(
+                            HttpStatusCode.BadRequest,
+                            mapOf("error" to "Invalid request format")
+                        )
+                    }
 
+                    val filePath = downloadRequest.filePath
                     log.debug("Downloading file for session {}: {}", id, filePath)
+
                     try {
                         // Get the session to validate it exists
                         getTerminalSessionByIdUseCase(id)
 
                         // Create a file object
-                        val file = java.io.File(filePath)
+                        val file = File(filePath)
                         if (!file.exists() || !file.isFile) {
-                            return@get call.respond(
+                            return@post call.respond(
                                 HttpStatusCode.NotFound,
                                 mapOf("error" to "File not found: $filePath")
                             )
@@ -257,7 +272,7 @@ fun Application.configureTerminalSessionRoutes() {
                         // Read file content
                         val fileBytes = file.readBytes()
 
-                        // Set headers for download - ensure filename is properly quoted
+                        // Set headers for download - use only the filename without path
                         call.response.headers.append("Content-Disposition", "attachment; filename=\"${file.name}\"")
                         call.response.headers.append("Content-Type", "application/octet-stream")
                         call.response.headers.append("Content-Length", fileBytes.size.toString())
