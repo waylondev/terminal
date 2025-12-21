@@ -11,13 +11,12 @@ import dev.waylon.terminal.boundedcontexts.terminalsession.domain.exception.Term
 import dev.waylon.terminal.boundedcontexts.terminalsession.domain.exception.TerminalSessionNotFoundException
 import dev.waylon.terminal.boundedcontexts.terminalsession.infrastructure.dto.CreateSessionRequest
 import dev.waylon.terminal.boundedcontexts.terminalsession.infrastructure.dto.ResizeTerminalRequest
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.log
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondBytes
+import io.ktor.server.response.respondFile
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -269,16 +268,24 @@ fun Application.configureTerminalSessionRoutes() {
                             )
                         }
 
-                        // Read file content
-                        val fileBytes = file.readBytes()
-
                         // Set headers for download - use only the filename without path
                         call.response.headers.append("Content-Disposition", "attachment; filename=\"${file.name}\"")
-                        call.response.headers.append("Content-Type", "application/octet-stream")
-                        call.response.headers.append("Content-Length", fileBytes.size.toString())
 
-                        // Send file content
-                        call.respondBytes(fileBytes, ContentType.Application.OctetStream, HttpStatusCode.OK)
+                        // Stream the file directly using respondFile with correct Ktor signature
+                        // Signature: respondFile(baseDir: File, fileName: String, configure: OutgoingContent.() -> Unit = {})
+                        // Use file.parentFile as baseDir and file.name as fileName
+                        if (file.parentFile != null) {
+                            call.respondFile(
+                                baseDir = file.parentFile,
+                                fileName = file.name,
+                            )
+                        } else {
+                            // Fallback for files in root directory
+                            call.respondFile(
+                                baseDir = File("."),
+                                fileName = file.name,
+                            )
+                        }
                     } catch (e: TerminalSessionNotFoundException) {
                         log.error("Session not found: {}", e.message, e)
                         call.respond(HttpStatusCode.NotFound, mapOf("error" to e.message))
