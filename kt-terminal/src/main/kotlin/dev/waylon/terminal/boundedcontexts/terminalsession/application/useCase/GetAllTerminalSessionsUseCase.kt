@@ -5,8 +5,8 @@ import dev.waylon.terminal.boundedcontexts.terminalsession.domain.TerminalSessio
 import org.slf4j.LoggerFactory
 
 /**
- * 获取所有终端会话用例
- * 封装获取所有终端会话的业务逻辑，保持Route层轻量级
+ * Get all terminal sessions use case
+ * Encapsulates the business logic for getting all terminal sessions, keeping the Route layer lightweight
  */
 class GetAllTerminalSessionsUseCase(
     private val terminalSessionService: TerminalSessionService
@@ -14,8 +14,8 @@ class GetAllTerminalSessionsUseCase(
     private val log = LoggerFactory.getLogger(GetAllTerminalSessionsUseCase::class.java)
 
     /**
-     * 执行获取所有终端会话操作
-     * @return 所有终端会话列表
+     * Execute the operation to get all terminal sessions
+     * @return List of all terminal sessions
      */
     fun execute(): List<TerminalSession> {
         log.debug("Executing GetAllTerminalSessionsUseCase")

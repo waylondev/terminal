@@ -5,8 +5,8 @@ import dev.waylon.terminal.boundedcontexts.terminalsession.domain.TerminalSessio
 import org.slf4j.LoggerFactory
 
 /**
- * 根据ID获取终端会话用例
- * 封装根据ID获取终端会话的业务逻辑，保持Route层轻量级
+ * Get terminal session by ID use case
+ * Encapsulates the business logic for getting a terminal session by ID, keeping the Route layer lightweight
  */
 class GetTerminalSessionByIdUseCase(
     private val terminalSessionService: TerminalSessionService
@@ -14,9 +14,9 @@ class GetTerminalSessionByIdUseCase(
     private val log = LoggerFactory.getLogger(GetTerminalSessionByIdUseCase::class.java)
 
     /**
-     * 执行根据ID获取终端会话操作
-     * @param sessionId 会话ID
-     * @return 终端会话，如果不存在则返回null
+     * Execute the operation to get a terminal session by ID
+     * @param sessionId The session ID
+     * @return The terminal session, or null if it doesn't exist
      */
     fun execute(sessionId: String): TerminalSession? {
         log.debug("Executing GetTerminalSessionByIdUseCase for sessionId: {}", sessionId)

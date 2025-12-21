@@ -3,55 +3,55 @@ package dev.waylon.terminal.boundedcontexts.terminalsession.infrastructure.dto
 import kotlinx.serialization.Serializable
 
 /**
- * 创建终端会话请求体
- * 使用标准的JSON请求体替代Query String
+ * Terminal session creation request body
+ * Uses standard JSON request body instead of Query String
  */
 @Serializable
 data class CreateSessionRequest(
     /**
-     * 用户ID，必填字段
+     * User ID, required field
      */
     val userId: String,
     
     /**
-     * 会话标题，可选字段
+     * Session title, optional field
      */
     val title: String? = null,
     
     /**
-     * 工作目录，可选字段
+     * Working directory, optional field
      */
     val workingDirectory: String? = null,
     
     /**
-     * Shell类型，可选字段
+     * Shell type, optional field
      */
     val shellType: String? = null,
     
     /**
-     * 终端列数，可选字段
+     * Terminal columns, optional field
      */
     val columns: Int? = null,
     
     /**
-     * 终端行数，可选字段
+     * Terminal rows, optional field
      */
     val rows: Int? = null
 )
 
 /**
- * 调整终端大小请求体
- * 使用标准的JSON请求体替代Query String
+ * Terminal resize request body
+ * Uses standard JSON request body instead of Query String
  */
 @Serializable
 data class ResizeTerminalRequest(
     /**
-     * 终端列数，必填字段
+     * Terminal columns, required field
      */
     val columns: Int,
     
     /**
-     * 终端行数，必填字段
+     * Terminal rows, required field
      */
     val rows: Int
 )

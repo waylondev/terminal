@@ -5,8 +5,8 @@ import dev.waylon.terminal.boundedcontexts.terminalsession.domain.TerminalSessio
 import org.slf4j.LoggerFactory
 
 /**
- * 终止终端会话用例
- * 封装终止终端会话的业务逻辑，保持Route层轻量级
+ * Terminate terminal session use case
+ * Encapsulates the business logic for terminating a terminal session, keeping the Route layer lightweight
  */
 class TerminateTerminalSessionUseCase(
     private val terminalSessionService: TerminalSessionService
@@ -14,9 +14,9 @@ class TerminateTerminalSessionUseCase(
     private val log = LoggerFactory.getLogger(TerminateTerminalSessionUseCase::class.java)
 
     /**
-     * 执行终止终端会话操作
-     * @param sessionId 会话ID
-     * @return 终止的终端会话，如果不存在则返回null
+     * Execute the operation to terminate a terminal session
+     * @param sessionId The session ID
+     * @return The terminated terminal session, or null if it doesn't exist
      */
     fun execute(sessionId: String): TerminalSession? {
         log.debug("Executing TerminateTerminalSessionUseCase for sessionId: {}", sessionId)
