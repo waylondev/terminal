@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { TerminalService, initializeTerminal, terminalUtils } from '../services/terminalService';
+import { downloadFile as apiDownloadFile } from '../services/terminalApi';
 
 interface TerminalComponentProps {
   className?: string;
@@ -17,6 +18,7 @@ const TerminalComponent = forwardRef<any, TerminalComponentProps>(({ className, 
   const fitAddon = useRef<FitAddon | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
+  const sessionIdRef = useRef<string>(''); // Ref to track current sessionId
   const terminalService = useRef<TerminalService | null>(null);
   const isInitialized = useRef(false);
 
@@ -38,6 +40,18 @@ const TerminalComponent = forwardRef<any, TerminalComponentProps>(({ className, 
         // 清屏后不自动添加提示符，避免重复的$符号
         // 提示符会在用户输入时由终端自动显示
       }
+    },
+    downloadFile: (filePath: string) => {
+      const currentSessionId = sessionIdRef.current;
+      if (!currentSessionId) {
+        console.error('Failed to download file: No session ID available');
+        alert('Failed to download file: No session ID available');
+        return;
+      }
+      apiDownloadFile(currentSessionId, filePath).catch(error => {
+        console.error('Failed to download file:', error);
+        alert(`Failed to download file: ${error.message}`);
+      });
     },
     updateSettings: (settings: any) => {
       if (terminal.current) {
@@ -111,8 +125,10 @@ const TerminalComponent = forwardRef<any, TerminalComponentProps>(({ className, 
     setIsConnected(connected);
     if (connected && sessionInfo) {
       setSessionId(sessionInfo.sessionId);
+      sessionIdRef.current = sessionInfo.sessionId; // Update ref as well
     } else {
       setSessionId('');
+      sessionIdRef.current = ''; // Update ref as well
     }
     onConnectionStatusChange?.(connected, sessionInfo);
   };

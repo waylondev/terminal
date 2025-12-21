@@ -3,6 +3,7 @@ import { TerminalComponent } from './components/Terminal';
 import { Header } from './components/Header';
 import { SessionListModal } from './components/SessionListModal';
 import { ResizeModal } from './components/ResizeModal';
+import { DownloadModal } from './components/DownloadModal';
 import { listSessions } from './services/terminalApi';
 
 function App() {
@@ -22,6 +23,9 @@ function App() {
     shellType: '',
     terminalSize: { columns: 80, rows: 24 } // 与后端默认尺寸保持一致
   });
+
+  // Download Modal state and handlers
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -145,6 +149,16 @@ function App() {
     }
   };
 
+  const handleDownloadFile = () => {
+    setShowDownloadModal(true);
+  };
+
+  const handleDownloadFileWithPath = (filePath: string) => {
+    if (terminalRef.current && terminalRef.current.downloadFile) {
+      terminalRef.current.downloadFile(filePath);
+    }
+  };
+
   // Resize Modal state and handlers
   const [showResizeModal, setShowResizeModal] = useState(false);
 
@@ -177,6 +191,7 @@ function App() {
         onListAllSessions={handleListAllSessions}
         onTerminateSession={handleTerminateSession}
         onResizeTerminal={handleResizeTerminal}
+        onDownloadFile={handleDownloadFile}
       />
 
       {/* Session List Modal Component */}
@@ -194,6 +209,13 @@ function App() {
         currentSize={currentSessionInfo.terminalSize}
         onClose={() => setShowResizeModal(false)}
         onApplyResize={handleApplyResize}
+      />
+      
+      {/* Download Modal Component */}
+      <DownloadModal
+        isOpen={showDownloadModal}
+        onClose={() => setShowDownloadModal(false)}
+        onDownload={handleDownloadFileWithPath}
       />
 
       {/* Main Content - Full width with minimal padding */}

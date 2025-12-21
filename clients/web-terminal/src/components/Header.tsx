@@ -19,6 +19,7 @@ interface HeaderProps {
   onListAllSessions: () => void;
   onTerminateSession: () => void;
   onResizeTerminal: () => void;
+  onDownloadFile: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -33,7 +34,8 @@ export const Header: React.FC<HeaderProps> = ({
   onListUserSessions,
   onListAllSessions,
   onTerminateSession,
-  onResizeTerminal
+  onResizeTerminal,
+  onDownloadFile
 }) => {
   // 模拟用户信息
   const [userInfo] = useState<UserInfo>({
@@ -105,6 +107,7 @@ export const Header: React.FC<HeaderProps> = ({
             onListSessions={onListAllSessions}
             onTerminateSession={onTerminateSession}
             onResizeTerminal={onResizeTerminal}
+            onDownloadFile={onDownloadFile}
           />
           
           {/* User Avatar Component */}
