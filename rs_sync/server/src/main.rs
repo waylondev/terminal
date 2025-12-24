@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]
 struct ServerConfig {
-    #[clap(short = 's', long, default_value = "127.0.0.1")]
+    #[clap(short = 's', long, default_value = "0.0.0.0")]
     host: String,
 
     #[clap(short, long, default_value = "3000")]
