@@ -1,7 +1,7 @@
 # rs_terminal configuration file
 
 # Default shell type to use
-default_shell_type = "bash"
+default_shell_type = "powershell"
 
 # Session timeout in milliseconds (30 minutes)
 session_timeout = 1800000
@@ -37,5 +37,5 @@ environment.TERM = "xterm-256color"
 
 [shells.powershell]
 # PowerShell configuration (for Windows)
-command = ["powershell", "-NoExit", "-Command", "-"]
+command = ["powershell", "-NoExit"]
 environment.TERM = "xterm-256color"
