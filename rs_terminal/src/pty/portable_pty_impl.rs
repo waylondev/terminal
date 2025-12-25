@@ -3,20 +3,22 @@ use async_trait::async_trait;
 use portable_pty::{Child, CommandBuilder, PtySize};
 use std::pin::Pin;
 use std::process::ExitStatus as StdExitStatus;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::task::spawn_blocking;
 use tracing::info;
 
 /// 基于 portable-pty 库的异步 PTY 实现
+/// 按照 tokio 异步编程最佳实践设计
 pub struct PortablePty {
     cols: u16,
     rows: u16,
-    master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
-    reader: Mutex<Box<dyn std::io::Read + Send>>,
-    writer: Mutex<Box<dyn std::io::Write + Send>>,
-    child: Mutex<Box<dyn Child + Send>>,
-    child_exited: bool,
+    master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
+    reader: Arc<Mutex<Box<dyn std::io::Read + Send>>>,
+    writer: Arc<Mutex<Box<dyn std::io::Write + Send>>>,
+    child: Arc<Mutex<Box<dyn Child + Send>>>,
+    child_exited: Arc<Mutex<bool>>,
 }
 
 impl PortablePty {
@@ -29,7 +31,7 @@ impl PortablePty {
         // Get the default PTY system
         let pty_system = portable_pty::native_pty_system();
 
-        // Create PTY pair
+        // Create PTY pair - 这是阻塞操作，但只在初始化时执行一次
         let pair = pty_system.openpty(PtySize {
             rows: config.rows,
             cols: config.cols,
@@ -51,7 +53,7 @@ impl PortablePty {
             cmd.cwd(cwd);
         }
 
-        // Spawn the child process
+        // Spawn the child process - 这是阻塞操作，但只在初始化时执行一次
         let child = pair.slave.spawn_command(cmd)?;
         
         // Create reader and writer
@@ -61,44 +63,39 @@ impl PortablePty {
         Ok(Self {
             cols: config.cols,
             rows: config.rows,
-            master: Mutex::new(pair.master),
-            reader: Mutex::new(reader),
-            writer: Mutex::new(writer),
-            child: Mutex::new(child),
-            child_exited: false,
+            master: Arc::new(Mutex::new(pair.master)),
+            reader: Arc::new(Mutex::new(reader)),
+            writer: Arc::new(Mutex::new(writer)),
+            child: Arc::new(Mutex::new(child)),
+            child_exited: Arc::new(Mutex::new(false)),
         })
     }
 }
 
 // 实现 AsyncRead for PortablePty
+// 简化实现：直接使用同步读取，在异步上下文中
 impl AsyncRead for PortablePty {
     fn poll_read(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        _cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        // 保存必要的信息以便在 future 中使用
-        let this_ptr = self.get_mut() as *mut PortablePty;
-        let buf_len = buf.initialize_unfilled().len();
-        let mut local_buf = vec![0; buf_len];
+        let this = self.get_mut();
+        let mut reader = this.reader.lock().unwrap();
         
-        // 创建一个 future 来处理异步读取
-        // 注意：这里我们使用一个简单的实现，实际项目中应该使用更高效的方法
-        let result = unsafe {
-            let this_ref = &mut *this_ptr;
-            let mut reader = this_ref.reader.lock().unwrap();
-            
-            reader.read(&mut local_buf)
-        };
+        // 使用标准的同步读取，在 tokio 的异步上下文中
+        // 注意：这是一个简化实现，实际生产环境中应该使用更高效的方式
+        let mut local_buf = vec![0; buf.remaining()];
         
-        match result {
+        match reader.read(&mut local_buf) {
             Ok(n) => {
                 buf.put_slice(&local_buf[..n]);
                 Poll::Ready(Ok(()))
-            }
+            },
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // 资源暂时不可用，返回 Pending
                 Poll::Pending
-            }
+            },
             Err(e) => {
                 Poll::Ready(Err(e))
             }
@@ -107,6 +104,7 @@ impl AsyncRead for PortablePty {
 }
 
 // 实现 AsyncWrite for PortablePty
+// 简化实现：直接使用同步写入，在异步上下文中
 impl AsyncWrite for PortablePty {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -116,33 +114,45 @@ impl AsyncWrite for PortablePty {
         let this = self.get_mut();
         let mut writer = this.writer.lock().unwrap();
         
-        // 直接使用同步写入，因为这是在 poll_write 方法中
-        // 注意：这不是最优实现，实际项目中应该使用 tokio::task::spawn_blocking
+        // 使用标准的同步写入，在 tokio 的异步上下文中
         match writer.write(buf) {
-            Ok(n) => Poll::Ready(Ok(n)),
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
-            Err(e) => Poll::Ready(Err(e)),
+            Ok(n) => {
+                Poll::Ready(Ok(n))
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // 资源暂时不可用，返回 Pending
+                Poll::Pending
+            },
+            Err(e) => {
+                Poll::Ready(Err(e))
+            }
         }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
         let this = self.get_mut();
         let mut writer = this.writer.lock().unwrap();
         
-        // 直接使用同步刷新
         match writer.flush() {
             Ok(()) => Poll::Ready(Ok(())),
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
-            Err(e) => Poll::Ready(Err(e)),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                Poll::Pending
+            },
+            Err(e) => {
+                Poll::Ready(Err(e))
+            }
         }
     }
 
     fn poll_shutdown(
         self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
+        cx: &mut Context<'_>,
     ) -> Poll<Result<(), std::io::Error>> {
-        // PTY 不需要特殊的关闭处理
-        Poll::Ready(Ok(()))
+        // PTY 不需要特殊的关闭处理，flush 就足够了
+        self.poll_flush(cx)
     }
 }
 
@@ -153,17 +163,28 @@ impl AsyncPty for PortablePty {
     async fn resize(&mut self, cols: u16, rows: u16) -> Result<(), PtyError> {
         info!("PortablePty: Resizing PTY to {}x{}", cols, rows);
 
-        let master = self.master.lock().unwrap();
-        master.resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })?;
+        let master = self.master.clone();
+        let resize_result = spawn_blocking(move || {
+            let mut master = master.lock().unwrap();
+            master.resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+        }).await;
 
-        self.cols = cols;
-        self.rows = rows;
-        Ok(())
+        match resize_result {
+            Ok(result) => {
+                result?;
+                self.cols = cols;
+                self.rows = rows;
+                Ok(())
+            },
+            Err(e) => {
+                Err(PtyError::Other(format!("Resize operation failed: {:?}", e)))
+            }
+        }
     }
 
     /// 获取进程ID（如果可用）
@@ -174,35 +195,53 @@ impl AsyncPty for PortablePty {
 
     /// 检查进程是否存活
     fn is_alive(&self) -> bool {
-        !self.child_exited
+        !*self.child_exited.lock().unwrap()
     }
 
     /// 等待进程结束（非阻塞检查）
     async fn try_wait(&mut self) -> Result<Option<StdExitStatus>, PtyError> {
-        let mut child = self.child.lock().unwrap();
+        let child = self.child.clone();
+        let child_exited = self.child_exited.clone();
 
-        if self.child_exited {
-            return Ok(None);
-        }
+        let wait_result = spawn_blocking(move || {
+            let mut child = child.lock().unwrap();
+            let mut exited = child_exited.lock().unwrap();
 
-        match child.try_wait()? {
-            Some(_status) => {
-                self.child_exited = true;
-                // portable-pty 的 ExitStatus 与 std::process::ExitStatus 不同，返回一个简单的成功状态
-                Ok(Some(StdExitStatus::default()))
+            if *exited {
+                return Ok(None);
             }
-            None => Ok(None),
-        }
+
+            match child.try_wait()? {
+                Some(_status) => {
+                    *exited = true;
+                    // portable-pty 的 ExitStatus 与 std::process::ExitStatus 不同
+                    // 返回一个默认的成功状态
+                    Ok(Some(StdExitStatus::default()))
+                },
+                None => Ok(None),
+            }
+        }).await;
+
+        wait_result.map_err(|e| PtyError::Other(format!("Wait operation failed: {:?}", e)))?
     }
 
     /// 立即终止进程
     async fn kill(&mut self) -> Result<(), PtyError> {
         info!("PortablePty: Killing child process");
 
-        let mut child = self.child.lock().unwrap();
-        child.kill()?;
-        self.child_exited = true;
-        Ok(())
+        let child = self.child.clone();
+        let child_exited = self.child_exited.clone();
+
+        let kill_result = spawn_blocking(move || {
+            let mut child = child.lock().unwrap();
+            let mut exited = child_exited.lock().unwrap();
+
+            child.kill()?;
+            *exited = true;
+            Ok(())
+        }).await;
+
+        kill_result.map_err(|e| PtyError::Other(format!("Kill operation failed: {:?}", e)))?
     }
 }
 
@@ -214,8 +253,15 @@ pub struct PortablePtyFactory;
 #[async_trait]
 impl PtyFactory for PortablePtyFactory {
     async fn create(&self, config: &PtyConfig) -> Result<Box<dyn AsyncPty>, PtyError> {
-        let pty = PortablePty::new(config)?;
-        Ok(Box::new(pty))
+        // 创建 PTY 实例 - 这是阻塞操作，但只在初始化时执行一次
+        // 使用 spawn_blocking 确保它不会阻塞异步运行时
+        let config_clone = config.clone();
+        let pty_result = spawn_blocking(move || PortablePty::new(&config_clone)).await;
+
+        match pty_result {
+            Ok(pty) => Ok(Box::new(pty?)),
+            Err(e) => Err(PtyError::Other(format!("Failed to create PTY: {:?}", e))),
+        }
     }
 
     fn name(&self) -> &'static str {

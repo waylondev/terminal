@@ -2,50 +2,20 @@
 /// This module provides a trait abstraction for different PTY implementations
 /// with a focus on pure async operations
 mod pty_trait;
-mod tokio_process_pty_impl;
-#[cfg(feature = "portable-pty")]
 mod portable_pty_impl;
-#[cfg(feature = "expectrl-pty")]
-mod expectrl_pty_impl;
 
 // Export all public types and traits
 pub use pty_trait::*;
-pub use tokio_process_pty_impl::TokioProcessPtyFactory;
-#[cfg(feature = "portable-pty")]
 pub use portable_pty_impl::PortablePtyFactory;
-#[cfg(feature = "expectrl-pty")]
-pub use expectrl_pty_impl::ExpectrlPtyFactory;
 
 use tracing::info;
 
 /// Get the PTY factory based on configuration
-/// This function allows dynamic selection of PTY implementation from configuration
+/// This function now always returns PortablePtyFactory, simplifying the implementation
 pub fn get_pty_factory(implementation_name: &str) -> Box<dyn PtyFactory + Send + Sync> {
-    match implementation_name.to_lowercase().as_str() {
-        #[cfg(feature = "portable-pty")]
-        "portable_pty" => {
-            info!("Using PortablePtyFactory implementation");
-            Box::new(PortablePtyFactory)
-        }
-        #[cfg(feature = "expectrl-pty")]
-        "expectrl-pty" => {
-            info!("Using ExpectrlPtyFactory implementation");
-            Box::new(ExpectrlPtyFactory)
-        }
-        #[cfg(not(feature = "expectrl-pty"))]
-        "expectrl-pty" => {
-            info!("Expectrl-pty feature not enabled, using default PTY implementation (TokioProcessPtyFactory)");
-            Box::new(TokioProcessPtyFactory)
-        }
-        "tokio_process" => {
-            info!("Using TokioProcessPtyFactory implementation");
-            Box::new(TokioProcessPtyFactory)
-        }
-        _ => {
-            info!("Using default PTY implementation (TokioProcessPtyFactory)");
-            Box::new(TokioProcessPtyFactory)
-        }
-    }
+    // Simplified implementation: always use PortablePtyFactory
+    info!("Using PortablePtyFactory implementation (requested: {})", implementation_name);
+    Box::new(PortablePtyFactory)
 }
 
 /// Create a new PTY instance using configuration from the application config
@@ -128,10 +98,10 @@ pub async fn create_pty_from_config(
 }
 
 /// Create a new PTY instance with custom configuration
-/// This function uses the default PTY implementation (tokio_process)
+/// This function uses the default PTY implementation (portable_pty)
 pub async fn create_pty_with_config(config: &PtyConfig) -> Result<Box<dyn AsyncPty>, PtyError> {
-    // 使用默认的PTY实现
-    let factory = get_pty_factory("tokio_process");
+    // 使用默认的PTY实现（PortablePty）
+    let factory = get_pty_factory("portable_pty");
     factory.create(config).await
 }
 
