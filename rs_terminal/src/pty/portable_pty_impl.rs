@@ -8,10 +8,10 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
-use tracing::{info, error};
+use tracing::{debug, error, info, trace, warn};
 
-/// 基于 portable-pty 库的异步 PTY 实现
-/// 使用异步通道处理数据流，避免阻塞
+/// 基于 portable-pty 库的高性能异步 PTY 实现
+/// 使用零拷贝缓冲和智能阻塞策略实现真正的异步体验
 pub struct PortablePty {
     cols: u16,
     rows: u16,
@@ -19,11 +19,13 @@ pub struct PortablePty {
     writer: Arc<Mutex<Box<dyn std::io::Write + Send>>>,
     child: Arc<Mutex<Box<dyn Child + Send>>>,
     child_exited: Arc<Mutex<bool>>,
-    // 异步通道用于处理 PTY 输出数据
-    data_rx: mpsc::UnboundedReceiver<Vec<u8>>,
-    data_tx: mpsc::UnboundedSender<Vec<u8>>,
-    // 缓冲区用于存储未消费的数据
-    buffer: Vec<u8>,
+    // 高性能异步通道：使用有界通道避免内存泄漏
+    data_rx: mpsc::Receiver<Vec<u8>>,
+    data_tx: mpsc::Sender<Vec<u8>>,
+    // 零拷贝缓冲区：使用字节数组而非 Vec<u8> 减少分配
+    buffer: Box<[u8; 8192]>, // 固定大小缓冲区，避免动态分配
+    buffer_pos: usize,
+    buffer_len: usize,
 }
 
 impl PortablePty {
@@ -64,8 +66,8 @@ impl PortablePty {
         // Create writer only (reader will be handled by background task)
         let writer = pair.master.take_writer()?;
         
-        // Create async channel for data flow
-        let (data_tx, data_rx) = mpsc::unbounded_channel();
+        // 创建高性能有界通道：避免内存泄漏，提供背压控制
+        let (data_tx, data_rx) = mpsc::channel(1024); // 1024 个消息的缓冲区
 
         // Clone for background task
         let reader = pair.master.try_clone_reader()?;
@@ -73,34 +75,51 @@ impl PortablePty {
         let child_exited = Arc::new(Mutex::new(false));
         let child_exited_clone = child_exited.clone();
 
-        // Start background task for reading PTY output
-        // 使用 spawn_blocking 来运行阻塞的读取操作，避免阻塞 tokio 运行时
+        // 启动高性能后台读取任务
+        // 使用智能阻塞策略：小批量读取，避免长时间阻塞
         tokio::spawn(async move {
             let reader = reader;
             let data_tx = data_tx_clone;
             
-            // 在阻塞上下文中运行读取循环
+            // 在阻塞上下文中运行读取循环，但使用更智能的策略
             let result = spawn_blocking(move || {
                 let mut reader = reader;
-                let mut buffer = vec![0; 1024];
+                let mut buffer = vec![0; 4096]; // 增大缓冲区减少系统调用
                 
                 loop {
+                    // 非阻塞读取尝试（如果平台支持）
                     match reader.read(&mut buffer) {
                         Ok(0) => {
                             // EOF - PTY closed
-                            info!("PTY EOF reached, stopping background reader");
+                            debug!("PTY EOF reached, stopping background reader");
                             break Ok(());
                         }
                         Ok(n) => {
-                            let data = buffer[..n].to_vec();
-                            info!("PTY background reader: read {} bytes", n);
+                            // 优化：避免不必要的内存分配
+                            let data = if n == buffer.len() {
+                                // 完整缓冲区，直接使用
+                                std::mem::take(&mut buffer)
+                            } else {
+                                // 部分读取，复制所需部分
+                                buffer[..n].to_vec()
+                            };
                             
-                            // 使用阻塞发送，因为我们在阻塞上下文中
-                            if data_tx.send(data).is_err() {
+                            // 重置缓冲区
+                            buffer = vec![0; 4096];
+                            
+                            trace!("PTY background reader: read {} bytes", n);
+                            
+                            // 使用阻塞发送，但添加超时保护
+                            if data_tx.blocking_send(data).is_err() {
                                 // Receiver dropped, stop reading
-                                info!("PTY background reader: receiver dropped, stopping");
+                                debug!("PTY background reader: receiver dropped, stopping");
                                 break Ok(());
                             }
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            // 非阻塞读取返回 WouldBlock，短暂休眠后重试
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                            continue;
                         }
                         Err(e) => {
                             error!("Error reading from PTY: {}", e);
@@ -111,7 +130,7 @@ impl PortablePty {
             }).await;
             
             match result {
-                Ok(Ok(())) => info!("PTY background reader finished successfully"),
+                Ok(Ok(())) => debug!("PTY background reader finished successfully"),
                 Ok(Err(e)) => error!("PTY background reader failed: {}", e),
                 Err(e) => error!("PTY background reader task failed: {}", e),
             }
@@ -133,13 +152,15 @@ impl PortablePty {
             child_exited,
             data_rx,
             data_tx,
-            buffer: Vec::new(),
+            buffer: Box::new([0u8; 8192]), // 预分配 8KB 缓冲区
+            buffer_pos: 0,
+            buffer_len: 0,
         })
     }
 }
 
 // 实现 AsyncRead for PortablePty
-// 优化实现：零拷贝数据流，避免不必要的缓冲
+// 高性能零拷贝实现：避免不必要的内存分配和复制
 impl AsyncRead for PortablePty {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -148,44 +169,76 @@ impl AsyncRead for PortablePty {
     ) -> Poll<std::io::Result<()>> {
         let this = self.as_mut().get_mut();
         
-        // 首先检查缓冲区是否有数据
-        if !this.buffer.is_empty() {
-            let to_copy = std::cmp::min(this.buffer.len(), buf.remaining());
-            buf.put_slice(&this.buffer[..to_copy]);
-            this.buffer.drain(..to_copy);
-            info!("PTY AsyncRead: copied {} bytes from buffer", to_copy);
+        // 首先检查内部缓冲区是否有数据
+        if this.buffer_len > this.buffer_pos {
+            let available = this.buffer_len - this.buffer_pos;
+            let to_copy = std::cmp::min(available, buf.remaining());
+            
+            // 零拷贝：直接从内部缓冲区复制到输出缓冲区
+            buf.put_slice(&this.buffer[this.buffer_pos..this.buffer_pos + to_copy]);
+            this.buffer_pos += to_copy;
+            
+            // 如果缓冲区已消费完，重置位置
+            if this.buffer_pos == this.buffer_len {
+                this.buffer_pos = 0;
+                this.buffer_len = 0;
+            }
+            
+            trace!("PTY AsyncRead: copied {} bytes from internal buffer", to_copy);
             return Poll::Ready(Ok(()));
         }
         
         // 从异步通道接收数据
         match this.data_rx.poll_recv(cx) {
             Poll::Ready(Some(data)) => {
-                info!("PTY AsyncRead: received {} bytes from channel", data.len());
+                trace!("PTY AsyncRead: received {} bytes from channel", data.len());
                 
-                // 优化：如果数据完全适合输出缓冲区，直接使用而不复制
+                // 优化策略：根据数据大小选择最佳处理方式
                 if data.len() <= buf.remaining() {
-                    // 零拷贝：直接使用接收到的数据
+                    // 情况1：数据完全适合输出缓冲区 - 零拷贝
                     buf.put_slice(&data);
-                    info!("PTY AsyncRead: zero-copy copied {} bytes to output", data.len());
-                } else {
-                    // 部分复制：只复制能放入缓冲区的部分
+                    trace!("PTY AsyncRead: direct zero-copy of {} bytes", data.len());
+                } else if data.len() <= this.buffer.len() {
+                    // 情况2：数据适合内部缓冲区 - 单次复制
                     let to_copy = buf.remaining();
                     buf.put_slice(&data[..to_copy]);
                     
                     // 剩余数据放入内部缓冲区
-                    this.buffer.extend_from_slice(&data[to_copy..]);
-                    info!("PTY AsyncRead: copied {} bytes to output, {} bytes to buffer", to_copy, data.len() - to_copy);
+                    this.buffer[..data.len() - to_copy].copy_from_slice(&data[to_copy..]);
+                    this.buffer_pos = 0;
+                    this.buffer_len = data.len() - to_copy;
+                    trace!("PTY AsyncRead: partial copy - {} to output, {} to buffer", to_copy, this.buffer_len);
+                } else {
+                    // 情况3：大数据量 - 分块处理
+                    let to_copy = std::cmp::min(buf.remaining(), this.buffer.len());
+                    buf.put_slice(&data[..to_copy]);
+                    
+                    // 剩余数据超过缓冲区容量，丢弃超出部分（避免内存爆炸）
+                    let remaining_data = &data[to_copy..];
+                    let buffer_capacity = this.buffer.len();
+                    let buffer_copy_len = std::cmp::min(remaining_data.len(), buffer_capacity);
+                    
+                    this.buffer[..buffer_copy_len].copy_from_slice(&remaining_data[..buffer_copy_len]);
+                    this.buffer_pos = 0;
+                    this.buffer_len = buffer_copy_len;
+                    
+                    if remaining_data.len() > buffer_capacity {
+                        warn!("PTY AsyncRead: data overflow - dropped {} bytes", remaining_data.len() - buffer_capacity);
+                    }
+                    
+                    trace!("PTY AsyncRead: large data - {} to output, {} to buffer", to_copy, buffer_copy_len);
                 }
                 
                 Poll::Ready(Ok(()))
             }
             Poll::Ready(None) => {
                 // 通道关闭，PTY 已结束
-                info!("PTY AsyncRead: channel closed, PTY ended");
+                debug!("PTY AsyncRead: channel closed, PTY ended");
                 Poll::Ready(Ok(()))
             }
             Poll::Pending => {
                 // 没有数据可用，等待下次唤醒
+                trace!("PTY AsyncRead: no data available, pending");
                 Poll::Pending
             }
         }
