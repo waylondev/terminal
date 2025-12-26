@@ -6,8 +6,8 @@ use tracing::{error, info};
 use super::{MessageHandler, PtyManager};
 use crate::{
     app_state::{AppState, ConnectionType, Session, SessionStatus},
-    pty::AsyncPty,
     protocol::{ConnectionResult, TerminalConnection, TerminalMessage},
+    pty::AsyncPty,
     service::ServiceError,
 };
 
@@ -16,7 +16,10 @@ pub async fn handle_terminal_session(mut connection: impl TerminalConnection, st
     let conn_id = connection.id().to_string();
     let conn_type = connection.connection_type();
 
-    info!("New terminal connection: {} (Type: {:?})", conn_id, conn_type);
+    info!(
+        "New terminal connection: {} (Type: {:?})",
+        conn_id, conn_type
+    );
 
     // Initialize managers
     let pty_manager = PtyManager::new();
@@ -24,12 +27,15 @@ pub async fn handle_terminal_session(mut connection: impl TerminalConnection, st
 
     // Initialize session
     if let Err(e) = SessionHandlerHelper::initialize_session(&conn_id, conn_type, &state).await {
-        SessionHandlerHelper::handle_session_initialization_error(e, connection, &conn_id, &state).await;
+        SessionHandlerHelper::handle_session_initialization_error(e, connection, &conn_id, &state)
+            .await;
         return;
     }
 
     // Create PTY for this session
-    let mut pty = match SessionHandlerHelper::create_session_pty(&pty_manager, &state, &conn_id).await {
+    let mut pty = match SessionHandlerHelper::create_session_pty(&pty_manager, &state, &conn_id)
+        .await
+    {
         Ok(pty) => pty,
         Err(e) => {
             SessionHandlerHelper::handle_pty_creation_error(e, connection, &conn_id, &state).await;
@@ -40,10 +46,18 @@ pub async fn handle_terminal_session(mut connection: impl TerminalConnection, st
     info!("PTY created for session {}", conn_id);
 
     // Run main session loop
-    SessionHandlerHelper::run_session_loop(&mut connection, &mut pty, &message_handler, &conn_id).await;
+    SessionHandlerHelper::run_session_loop(&mut connection, &mut pty, &message_handler, &conn_id)
+        .await;
 
     // Clean up session resources
-    SessionHandlerHelper::cleanup_session_resources(connection, pty, &pty_manager, &conn_id, &state).await;
+    SessionHandlerHelper::cleanup_session_resources(
+        connection,
+        pty,
+        &pty_manager,
+        &conn_id,
+        &state,
+    )
+    .await;
 
     info!("Terminal session {} closed", conn_id);
 }
@@ -53,7 +67,11 @@ struct SessionHandlerHelper;
 
 impl SessionHandlerHelper {
     /// 初始化会话
-    async fn initialize_session(conn_id: &str, conn_type: crate::protocol::ConnectionType, state: &AppState) -> Result<(), ServiceError> {
+    async fn initialize_session(
+        conn_id: &str,
+        conn_type: crate::protocol::ConnectionType,
+        state: &AppState,
+    ) -> Result<(), ServiceError> {
         match state.get_session(conn_id).await {
             Some(mut session) => {
                 // Update session status to active
@@ -75,7 +93,9 @@ impl SessionHandlerHelper {
                     state.config.default_shell_config.size.rows,
                     match conn_type {
                         crate::protocol::ConnectionType::WebSocket => ConnectionType::WebSocket,
-                        crate::protocol::ConnectionType::WebTransport => ConnectionType::WebTransport,
+                        crate::protocol::ConnectionType::WebTransport => {
+                            ConnectionType::WebTransport
+                        }
                     },
                 );
                 state.add_session(session).await;
@@ -87,7 +107,11 @@ impl SessionHandlerHelper {
     }
 
     /// 创建会话 PTY
-    async fn create_session_pty(pty_manager: &PtyManager, state: &AppState, conn_id: &str) -> Result<Box<dyn AsyncPty>, ServiceError> {
+    async fn create_session_pty(
+        pty_manager: &PtyManager,
+        state: &AppState,
+        conn_id: &str,
+    ) -> Result<Box<dyn AsyncPty>, ServiceError> {
         match pty_manager.create_pty_from_config(&state.config).await {
             Ok(pty) => {
                 info!("PTY created for session {}", conn_id);
@@ -95,31 +119,44 @@ impl SessionHandlerHelper {
             }
             Err(e) => {
                 error!("Failed to create PTY for session {}: {}", conn_id, e);
-                Err(ServiceError::PtyCreation(format!("Failed to create PTY: {}", e)))
+                Err(ServiceError::PtyCreation(format!(
+                    "Failed to create PTY: {}",
+                    e
+                )))
             }
         }
     }
 
     /// 处理会话初始化错误
-    async fn handle_session_initialization_error(e: ServiceError, mut connection: impl TerminalConnection, conn_id: &str, state: &AppState) {
+    async fn handle_session_initialization_error(
+        e: ServiceError,
+        mut connection: impl TerminalConnection,
+        conn_id: &str,
+        state: &AppState,
+    ) {
         error!("Failed to initialize session {}: {}", conn_id, e);
-        
+
         let error_msg = format!("Error: Failed to initialize terminal session: {}", e);
         let _ = connection.send_text(&error_msg).await;
         let _ = connection.close().await;
-        
+
         // Clean up session if it was added
         state.remove_session(conn_id).await;
     }
 
     /// 处理 PTY 创建错误
-    async fn handle_pty_creation_error(e: ServiceError, mut connection: impl TerminalConnection, conn_id: &str, state: &AppState) {
+    async fn handle_pty_creation_error(
+        e: ServiceError,
+        mut connection: impl TerminalConnection,
+        conn_id: &str,
+        state: &AppState,
+    ) {
         error!("Failed to create PTY for session {}: {}", conn_id, e);
-        
+
         let error_msg = format!("Error: Failed to create terminal session: {}", e);
         let _ = connection.send_text(&error_msg).await;
         let _ = connection.close().await;
-        
+
         // Clean up session if it was added
         state.remove_session(conn_id).await;
     }
@@ -161,7 +198,10 @@ impl SessionHandlerHelper {
     ) -> bool {
         match msg_result {
             Some(Ok(msg)) => {
-                match message_handler.handle_message(msg, connection, pty, conn_id).await {
+                match message_handler
+                    .handle_message(msg, connection, pty, conn_id)
+                    .await
+                {
                     Ok(close) => close,
                     Err(e) => {
                         error!("Failed to handle message for session {}: {}", conn_id, e);
@@ -195,7 +235,10 @@ impl SessionHandlerHelper {
             }
             Ok(n) => {
                 let data = &pty_buffer[..n];
-                if let Err(e) = message_handler.handle_pty_output(data, connection, conn_id).await {
+                if let Err(e) = message_handler
+                    .handle_pty_output(data, connection, conn_id)
+                    .await
+                {
                     error!("Failed to handle PTY output for session {}: {}", conn_id, e);
                     true
                 } else {

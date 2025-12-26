@@ -9,31 +9,31 @@ pub enum ConnectionError {
     /// IO 错误
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    
+
     /// WebSocket 错误
     #[error("WebSocket error: {0}")]
     WebSocket(String),
-    
+
     /// WebTransport 错误
     #[error("WebTransport error: {0}")]
     WebTransport(String),
-    
+
     /// 连接已关闭
     #[error("Connection closed")]
     ConnectionClosed,
-    
+
     /// 消息序列化错误
     #[error("Message serialization error: {0}")]
     Serialization(String),
-    
+
     /// 消息反序列化错误
     #[error("Message deserialization error: {0}")]
     Deserialization(String),
-    
+
     /// 超时错误
     #[error("Operation timeout")]
     Timeout,
-    
+
     /// 其他错误
     #[error("Connection error: {0}")]
     Other(String),

@@ -11,8 +11,8 @@ use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 use crate::{app_state::AppState, handlers};
-use tokio::signal;
 use std::time::Duration;
+use tokio::signal;
 
 /// Start WebTransport server in a separate task
 pub fn start_webtransport_service(state: AppState) {

@@ -6,7 +6,9 @@ use axum::extract::ws::Message::{Binary, Close, Ping, Pong, Text};
 use axum::extract::ws::WebSocket;
 use futures_util::StreamExt;
 
-use crate::protocol::{ConnectionError, ConnectionResult, ConnectionType, TerminalConnection, TerminalMessage};
+use crate::protocol::{
+    ConnectionError, ConnectionResult, ConnectionType, TerminalConnection, TerminalMessage,
+};
 
 /// WebSocket connection implementation that implements TerminalConnection trait
 pub struct WebSocketConnection {

@@ -1,12 +1,12 @@
+mod portable_pty_impl;
 /// PTY (Pseudo Terminal) handling for Waylon Terminal
 /// This module provides a trait abstraction for different PTY implementations
 /// with a focus on pure async operations
 mod pty_trait;
-mod portable_pty_impl;
 
 // Export all public types and traits
-pub use pty_trait::*;
 pub use portable_pty_impl::PortablePtyFactory;
+pub use pty_trait::*;
 
 use tracing::info;
 
@@ -14,7 +14,10 @@ use tracing::info;
 /// This function now always returns PortablePtyFactory, simplifying the implementation
 pub fn get_pty_factory(implementation_name: &str) -> Box<dyn PtyFactory + Send + Sync> {
     // Simplified implementation: always use PortablePtyFactory
-    info!("Using PortablePtyFactory implementation (requested: {})", implementation_name);
+    info!(
+        "Using PortablePtyFactory implementation (requested: {})",
+        implementation_name
+    );
     Box::new(PortablePtyFactory)
 }
 

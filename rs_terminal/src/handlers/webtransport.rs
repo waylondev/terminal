@@ -72,7 +72,7 @@ async fn run_webtransport_server(
     loop {
         tokio::select! {
             biased;
-            
+
             // Handle shutdown signal
             _ = async {
                 let mut rx = shutdown_tx.subscribe();
@@ -81,18 +81,18 @@ async fn run_webtransport_server(
                 info!("WebTransport server received shutdown signal");
                 break;
             }
-            
+
             // Accept incoming connections
             incoming_session = endpoint.accept() => {
                 match incoming_session.await {
                     Ok(session) => {
                         info!("New WebTransport session accepted");
-                        
+
                         // Accept the session to get the connection
                         match session.accept().await {
                             Ok(connection) => {
                                 info!("WebTransport connection established");
-                                
+
                                 // Handle the connection in a separate task
                                 let state_clone = state.clone();
                                 tokio::spawn(async move {
@@ -128,12 +128,12 @@ async fn handle_webtransport_connection(
 
     // Extract session ID from the connection path
     let session_id = extract_session_id_from_connection(&connection)?;
-    
+
     info!("WebTransport session ID: {}", session_id);
 
     // Create WebTransport connection wrapper and set the actual connection
     let webtransport_conn = WebTransportConnection::new(connection_id.clone());
-    
+
     // Set the actual WebTransport connection
     if let Err(e) = webtransport_conn.set_connection(connection).await {
         error!("Failed to set WebTransport connection: {}", e);
