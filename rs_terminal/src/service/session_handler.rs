@@ -7,7 +7,7 @@ use super::{MessageHandler, PtyManager};
 use crate::{
     app_state::{AppState, ConnectionType, Session, SessionStatus},
     pty::AsyncPty,
-    protocol::{TerminalConnection, TerminalMessage},
+    protocol::{ConnectionResult, TerminalConnection, TerminalMessage},
     service::ServiceError,
 };
 
@@ -95,7 +95,7 @@ impl SessionHandlerHelper {
             }
             Err(e) => {
                 error!("Failed to create PTY for session {}: {}", conn_id, e);
-                Err(ServiceError::Other(format!("Failed to create PTY: {}", e)))
+                Err(ServiceError::PtyCreation(format!("Failed to create PTY: {}", e)))
             }
         }
     }
@@ -153,7 +153,7 @@ impl SessionHandlerHelper {
 
     /// 处理连接消息
     async fn handle_connection_message(
-        msg_result: Option<Result<TerminalMessage, Box<dyn std::error::Error + Send>>>,
+        msg_result: Option<ConnectionResult<TerminalMessage>>,
         connection: &mut impl TerminalConnection,
         pty: &mut Box<dyn AsyncPty>,
         message_handler: &MessageHandler,

@@ -5,7 +5,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 
-use crate::protocol::{ConnectionType, TerminalConnection, TerminalMessage};
+use crate::protocol::{ConnectionError, ConnectionResult, ConnectionType, TerminalConnection, TerminalMessage};
 
 /// WebTransport connection implementation that implements TerminalConnection trait
 /// This follows the same pattern as WebSocketConnection
@@ -55,35 +55,33 @@ impl WebTransportConnection {
 
 #[async_trait::async_trait]
 impl TerminalConnection for WebTransportConnection {
-    async fn send_text(&mut self, message: &str) -> Result<(), Box<dyn std::error::Error + Send>> {
+    async fn send_text(&mut self, message: &str) -> ConnectionResult<()> {
         let stream_guard = self.stream.lock().await;
-        if let Some(ref stream) = *stream_guard {
+        if let Some(ref _stream) = *stream_guard {
             // For wtransport 0.6, we need to use a different approach for sending data
             // The bidirectional stream doesn't have a split method in this version
             // We'll need to use the connection directly or find the correct API
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Unsupported, "WebTransport send_text not implemented yet")));
+            return Err(ConnectionError::WebTransport("WebTransport send_text not implemented yet".to_string()));
         } else {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotConnected, "WebTransport stream not available")));
+            return Err(ConnectionError::ConnectionClosed);
         }
     }
 
-    async fn send_binary(&mut self, data: &[u8]) -> Result<(), Box<dyn std::error::Error + Send>> {
+    async fn send_binary(&mut self, data: &[u8]) -> ConnectionResult<()> {
         let stream_guard = self.stream.lock().await;
-        if let Some(ref stream) = *stream_guard {
+        if let Some(ref _stream) = *stream_guard {
             // For wtransport 0.6, we need to use a different approach for sending data
             // The bidirectional stream doesn't have a split method in this version
             // We'll need to use the connection directly or find the correct API
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Unsupported, "WebTransport send_binary not implemented yet")));
+            return Err(ConnectionError::WebTransport("WebTransport send_binary not implemented yet".to_string()));
         } else {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotConnected, "WebTransport stream not available")));
+            return Err(ConnectionError::ConnectionClosed);
         }
     }
 
-    async fn receive(
-        &mut self,
-    ) -> Option<Result<TerminalMessage, Box<dyn std::error::Error + Send>>> {
+    async fn receive(&mut self) -> Option<ConnectionResult<TerminalMessage>> {
         let stream_guard = self.stream.lock().await;
-        if let Some(ref stream) = *stream_guard {
+        if let Some(ref _stream) = *stream_guard {
             // For wtransport 0.6, we need to use a different approach for receiving data
             // The bidirectional stream doesn't have a split method in this version
             // We'll need to use the connection directly or find the correct API
@@ -96,7 +94,7 @@ impl TerminalConnection for WebTransportConnection {
         }
     }
 
-    async fn close(&mut self) -> Result<(), Box<dyn std::error::Error + Send>> {
+    async fn close(&mut self) -> ConnectionResult<()> {
         info!("Closing WebTransport connection: {}", self.id);
         
         // Close the stream
@@ -124,5 +122,14 @@ impl TerminalConnection for WebTransportConnection {
 
     fn connection_type(&self) -> ConnectionType {
         ConnectionType::WebTransport
+    }
+
+    fn is_alive(&self) -> bool {
+        // WebTransport 连接状态检查
+        // 检查连接和流是否都存在
+        let conn_exists = self.connection.try_lock().map_or(false, |guard| guard.is_some());
+        let stream_exists = self.stream.try_lock().map_or(false, |guard| guard.is_some());
+        
+        conn_exists && stream_exists
     }
 }

@@ -377,7 +377,7 @@ impl PortablePty {
     fn acquire_master_lock<'a>(master: &'a Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>, operation: &'a str) -> Result<std::sync::MutexGuard<'a, Box<dyn portable_pty::MasterPty + Send>>, PtyError> {
         master.lock().map_err(|e| {
             error!("Failed to acquire master lock for {}: {}", operation, e);
-            PtyError::Other(format!("Failed to acquire lock: {}", e))
+            PtyError::LockAcquisition(format!("Failed to acquire master lock for {}: {}", operation, e))
         })
     }
     
@@ -414,7 +414,7 @@ impl PortablePty {
     fn acquire_child_lock<'a>(child: &'a Arc<Mutex<Box<dyn Child + Send>>>, operation: &'a str) -> Result<std::sync::MutexGuard<'a, Box<dyn Child + Send>>, PtyError> {
         child.lock().map_err(|e| {
             error!("Failed to acquire child lock for {}: {}", operation, e);
-            PtyError::Other(format!("Failed to acquire lock: {}", e))
+            PtyError::LockAcquisition(format!("Failed to acquire child lock for {}: {}", operation, e))
         })
     }
     
@@ -422,7 +422,7 @@ impl PortablePty {
     fn acquire_child_exited_lock<'a>(child_exited: &'a Arc<Mutex<bool>>, operation: &'a str) -> Result<std::sync::MutexGuard<'a, bool>, PtyError> {
         child_exited.lock().map_err(|e| {
             error!("Failed to acquire child_exited lock for {}: {}", operation, e);
-            PtyError::Other(format!("Failed to acquire lock: {}", e))
+            PtyError::LockAcquisition(format!("Failed to acquire child_exited lock for {}: {}", operation, e))
         })
     }
     
@@ -503,6 +503,33 @@ impl AsyncPty for PortablePty {
         let kill_result = spawn_blocking(move || Self::kill_process(child, child_exited)).await;
 
         Self::handle_kill_result(kill_result)
+    }
+}
+
+// ================ 资源清理实现 ================
+
+/// 实现 Drop trait 确保资源正确清理
+impl Drop for PortablePty {
+    fn drop(&mut self) {
+        info!("PortablePty: Dropping PTY instance");
+        
+        // 尝试终止子进程
+        if self.is_alive() {
+            let child = self.child.clone();
+            let child_exited = self.child_exited.clone();
+            
+            // 使用 spawn_blocking 避免阻塞异步运行时
+            let _ = spawn_blocking(move || {
+                if let Err(e) = Self::kill_process(child, child_exited) {
+                    error!("Failed to kill child process during drop: {}", e);
+                }
+            });
+        }
+        
+        // 关闭数据通道
+        drop(self.data_rx.try_recv());
+        
+        info!("PortablePty: Resources cleaned up successfully");
     }
 }
 

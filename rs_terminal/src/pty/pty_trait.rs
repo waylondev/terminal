@@ -26,6 +26,16 @@ pub enum PtyError {
     ProcessTerminated,
     #[error("Resize failed: {0}")]
     ResizeFailed(String),
+    #[error("Lock acquisition error: {0}")]
+    LockAcquisition(String),
+    #[error("Resource cleanup error: {0}")]
+    ResourceCleanup(String),
+    #[error("Background task error: {0}")]
+    BackgroundTask(String),
+    #[error("Buffer overflow error")]
+    BufferOverflow,
+    #[error("Channel communication error: {0}")]
+    ChannelCommunication(String),
     #[error("Other error: {0}")]
     Other(String),
 }

@@ -14,23 +14,37 @@ pub enum ServiceError {
 
     /// Connection error
     #[error("Connection error: {0}")]
-    Connection(Box<dyn std::error::Error + Send + 'static>),
+    Connection(#[from] crate::protocol::ConnectionError),
+
+    /// Session not found
+    #[error("Session not found: {0}")]
+    SessionNotFound(String),
+
+    /// Session already exists
+    #[error("Session already exists: {0}")]
+    SessionAlreadyExists(String),
+
+    /// Session initialization error
+    #[error("Session initialization error: {0}")]
+    SessionInitialization(String),
 
     /// Message handling error
     #[error("Message handling error: {0}")]
     MessageHandling(String),
 
-    /// Session error
-    #[error("Session error: {0}")]
-    Session(String),
+    /// PTY creation error
+    #[error("PTY creation error: {0}")]
+    PtyCreation(String),
+
+    /// Resource cleanup error
+    #[error("Resource cleanup error: {0}")]
+    ResourceCleanup(String),
+
+    /// Configuration error
+    #[error("Configuration error: {0}")]
+    Config(#[from] crate::config::ConfigError),
 
     /// Other error
     #[error("Other error: {0}")]
     Other(String),
-}
-
-impl From<Box<dyn std::error::Error + Send + 'static>> for ServiceError {
-    fn from(e: Box<dyn std::error::Error + Send + 'static>) -> Self {
-        ServiceError::Connection(e)
-    }
 }
