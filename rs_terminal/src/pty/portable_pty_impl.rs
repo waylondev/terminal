@@ -117,7 +117,11 @@ impl PortablePty {
             }
             
             // Mark child as exited
-            *child_exited_clone.lock().unwrap() = true;
+            if let Ok(mut exited) = child_exited_clone.lock() {
+                *exited = true;
+            } else {
+                error!("Failed to acquire child_exited lock for marking exit");
+            }
         });
 
         Ok(Self {
@@ -189,7 +193,7 @@ impl AsyncRead for PortablePty {
 }
 
 // 实现 AsyncWrite for PortablePty
-// 简化实现：直接使用同步写入，在异步上下文中
+// 优化实现：直接同步写入，但使用更安全的错误处理
 impl AsyncWrite for PortablePty {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -197,10 +201,18 @@ impl AsyncWrite for PortablePty {
         buf: &[u8],
     ) -> Poll<Result<usize, std::io::Error>> {
         let this = self.get_mut();
-        let mut writer = this.writer.lock().unwrap();
         
-        // 使用标准的同步写入，在 tokio 的异步上下文中
         info!("PTY AsyncWrite: writing {} bytes to PTY", buf.len());
+        
+        // 使用更安全的错误处理，避免 unwrap()
+        let mut writer = match this.writer.lock() {
+            Ok(writer) => writer,
+            Err(e) => {
+                error!("PTY AsyncWrite: failed to acquire writer lock: {}", e);
+                return Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to acquire lock")));
+            }
+        };
+        
         match writer.write(buf) {
             Ok(n) => {
                 info!("PTY AsyncWrite: successfully wrote {} bytes", n);
@@ -223,7 +235,14 @@ impl AsyncWrite for PortablePty {
         _cx: &mut Context<'_>,
     ) -> Poll<Result<(), std::io::Error>> {
         let this = self.get_mut();
-        let mut writer = this.writer.lock().unwrap();
+        
+        let mut writer = match this.writer.lock() {
+            Ok(writer) => writer,
+            Err(e) => {
+                error!("PTY AsyncWrite: failed to acquire writer lock for flush: {}", e);
+                return Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to acquire lock")));
+            }
+        };
         
         match writer.flush() {
             Ok(()) => Poll::Ready(Ok(())),
@@ -254,24 +273,35 @@ impl AsyncPty for PortablePty {
 
         let master = self.master.clone();
         let resize_result = spawn_blocking(move || {
-            let mut master = master.lock().unwrap();
-            master.resize(PtySize {
+            let mut master = match master.lock() {
+                Ok(master) => master,
+                Err(e) => {
+                    error!("Failed to acquire master lock for resize: {}", e);
+                    return Err(PtyError::Other(format!("Failed to acquire lock: {}", e)));
+                }
+            };
+            match master.resize(PtySize {
                 rows,
                 cols,
                 pixel_width: 0,
                 pixel_height: 0,
-            })
+            }) {
+                Ok(()) => Ok(()),
+                Err(e) => Err(PtyError::Other(format!("Resize failed: {}", e))),
+            }
         }).await;
 
         match resize_result {
-            Ok(result) => {
-                result?;
+            Ok(Ok(())) => {
                 self.cols = cols;
                 self.rows = rows;
                 Ok(())
             },
+            Ok(Err(e)) => {
+                Err(PtyError::Other(format!("Resize operation failed: {}", e)))
+            },
             Err(e) => {
-                Err(PtyError::Other(format!("Resize operation failed: {:?}", e)))
+                Err(PtyError::Other(format!("Resize spawn_blocking failed: {:?}", e)))
             }
         }
     }
@@ -284,7 +314,13 @@ impl AsyncPty for PortablePty {
 
     /// 检查进程是否存活
     fn is_alive(&self) -> bool {
-        !*self.child_exited.lock().unwrap()
+        match self.child_exited.lock() {
+            Ok(exited) => !*exited,
+            Err(e) => {
+                error!("Failed to acquire child_exited lock for is_alive check: {}", e);
+                false
+            }
+        }
     }
 
     /// 等待进程结束（非阻塞检查）
@@ -293,25 +329,42 @@ impl AsyncPty for PortablePty {
         let child_exited = self.child_exited.clone();
 
         let wait_result = spawn_blocking(move || {
-            let mut child = child.lock().unwrap();
-            let mut exited = child_exited.lock().unwrap();
+            let mut child = match child.lock() {
+                Ok(child) => child,
+                Err(e) => {
+                    error!("Failed to acquire child lock for try_wait: {}", e);
+                    return Err(PtyError::Other(format!("Failed to acquire lock: {}", e)));
+                }
+            };
+            
+            let mut exited = match child_exited.lock() {
+                Ok(exited) => exited,
+                Err(e) => {
+                    error!("Failed to acquire child_exited lock for try_wait: {}", e);
+                    return Err(PtyError::Other(format!("Failed to acquire lock: {}", e)));
+                }
+            };
 
             if *exited {
                 return Ok(None);
             }
 
-            match child.try_wait()? {
-                Some(_status) => {
+            match child.try_wait() {
+                Ok(Some(_status)) => {
                     *exited = true;
                     // portable-pty 的 ExitStatus 与 std::process::ExitStatus 不同
                     // 返回一个默认的成功状态
                     Ok(Some(StdExitStatus::default()))
                 },
-                None => Ok(None),
+                Ok(None) => Ok(None),
+                Err(e) => Err(PtyError::Other(format!("Try wait failed: {}", e))),
             }
         }).await;
 
-        wait_result.map_err(|e| PtyError::Other(format!("Wait operation failed: {:?}", e)))?
+        match wait_result {
+            Ok(result) => result,
+            Err(e) => Err(PtyError::Other(format!("Wait spawn_blocking failed: {:?}", e))),
+        }
     }
 
     /// 立即终止进程
@@ -322,15 +375,39 @@ impl AsyncPty for PortablePty {
         let child_exited = self.child_exited.clone();
 
         let kill_result = spawn_blocking(move || {
-            let mut child = child.lock().unwrap();
-            let mut exited = child_exited.lock().unwrap();
+            let mut child = match child.lock() {
+                Ok(child) => child,
+                Err(e) => {
+                    error!("Failed to acquire child lock for kill: {}", e);
+                    return Err(PtyError::Other(format!("Failed to acquire lock: {}", e)));
+                }
+            };
+            
+            let mut exited = match child_exited.lock() {
+                Ok(exited) => exited,
+                Err(e) => {
+                    error!("Failed to acquire child_exited lock for kill: {}", e);
+                    return Err(PtyError::Other(format!("Failed to acquire lock: {}", e)));
+                }
+            };
 
-            child.kill()?;
-            *exited = true;
-            Ok(())
+            if *exited {
+                return Ok(());
+            }
+
+            match child.kill() {
+                Ok(()) => {
+                    *exited = true;
+                    Ok(())
+                }
+                Err(e) => Err(PtyError::Other(format!("Kill failed: {}", e))),
+            }
         }).await;
 
-        kill_result.map_err(|e| PtyError::Other(format!("Kill operation failed: {:?}", e)))?
+        match kill_result {
+            Ok(result) => result,
+            Err(e) => Err(PtyError::Other(format!("Kill spawn_blocking failed: {:?}", e))),
+        }
     }
 }
 

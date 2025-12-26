@@ -11,6 +11,8 @@ use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 use crate::{app_state::AppState, handlers};
+use tokio::signal;
+use std::time::Duration;
 
 /// Start WebTransport server in a separate task
 pub fn start_webtransport_service(state: AppState) {
@@ -40,8 +42,8 @@ pub fn build_router(state: AppState) -> Router {
             Method::DELETE,
             Method::OPTIONS,
             // WebSocket upgrade method
-            // 使用 unwrap_or 提供默认值，确保编译通过
-            Method::from_bytes(b"UPGRADE").unwrap_or(Method::OPTIONS),
+            // 使用更安全的错误处理，避免panic
+            Method::from_bytes(b"UPGRADE").unwrap_or_else(|_| Method::OPTIONS),
         ])
         // Allow all headers (now allowed since we're not using credentials)
         .allow_headers(Any);
@@ -101,5 +103,58 @@ pub async fn run_server(
     );
 
     axum::serve(listener, router).await?;
+    Ok(())
+}
+
+/// Run the HTTP server with graceful shutdown support
+pub async fn run_server_with_graceful_shutdown(
+    router: Router,
+    config: &crate::config::TerminalConfig,
+) -> Result<(), std::io::Error> {
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.http_port));
+    let webtransport_addr = SocketAddr::from(([0, 0, 0, 0], config.webtransport_port));
+
+    let listener = TcpListener::bind(addr).await?;
+
+    info!("Server running on http://{}", addr);
+    info!("WebSocket server available at ws://{}/ws", addr);
+    info!(
+        "WebTransport server available at https://{}",
+        webtransport_addr
+    );
+
+    // Create graceful shutdown signal
+    let graceful_shutdown = async {
+        let ctrl_c = async {
+            signal::ctrl_c()
+                .await
+                .expect("Failed to install Ctrl+C handler");
+            info!("Received Ctrl+C signal, initiating graceful shutdown...");
+        };
+
+        #[cfg(unix)]
+        let terminate = async {
+            signal::unix::signal(signal::unix::SignalKind::terminate())
+                .expect("Failed to install signal handler")
+                .recv()
+                .await;
+            info!("Received SIGTERM signal, initiating graceful shutdown...");
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+    };
+
+    // Run server with graceful shutdown
+    axum::serve(listener, router)
+        .with_graceful_shutdown(graceful_shutdown)
+        .await?;
+
+    info!("Server shutdown complete");
     Ok(())
 }

@@ -1,7 +1,7 @@
 # rs_terminal configuration file
 
 # Default shell type to use
-default_shell_type = "powershell"
+default_shell_type = "bash"
 
 # Session timeout in milliseconds (30 minutes)
 session_timeout = 1800000

@@ -12,7 +12,7 @@ mod service;
 // Use public API from modules
 use app_state::AppState;
 use config::{ConfigLoader, init_logging};
-use server::{build_router, run_server, start_webtransport_service};
+use server::{build_router, run_server_with_graceful_shutdown, start_webtransport_service};
 
 #[tokio::main]
 async fn main() {
@@ -36,9 +36,9 @@ async fn main() {
     // Start WebTransport service
     start_webtransport_service(app_state.clone());
 
-    // Build router and run server
+    // Build router and run server with graceful shutdown
     let app = build_router(app_state);
-    if let Err(e) = run_server(app, &config).await {
+    if let Err(e) = run_server_with_graceful_shutdown(app, &config).await {
         eprintln!("Failed to run server: {}", e);
         std::process::exit(1);
     }

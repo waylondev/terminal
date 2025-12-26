@@ -63,4 +63,12 @@ impl AppState {
         let sessions = self.sessions.lock().await;
         sessions.len()
     }
+
+    /// Clean up all sessions and return the number of sessions cleaned
+    pub async fn cleanup_all_sessions(&self) -> usize {
+        let mut sessions = self.sessions.lock().await;
+        let count = sessions.len();
+        sessions.clear();
+        count
+    }
 }

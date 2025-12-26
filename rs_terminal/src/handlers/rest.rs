@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
 };
 use serde_json::to_value;
-use tracing::info;
+use tracing::{info, error};
 use uuid::Uuid;
 
 use crate::{
@@ -133,7 +133,20 @@ pub async fn get_session(
                 created_at: session.created_at,
             };
 
-            (StatusCode::OK, Json(to_value(response).unwrap()))
+            match to_value(response) {
+                Ok(value) => (StatusCode::OK, Json(value)),
+                Err(e) => {
+                    error!("Failed to serialize session response: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(to_value(ErrorResponse {
+                            error: true,
+                            message: "Internal server error".to_string(),
+                            code: Some(500),
+                        }).unwrap_or_default()),
+                    )
+                }
+            }
         }
         None => {
             // Return error using ErrorResponse struct
@@ -143,10 +156,20 @@ pub async fn get_session(
                 code: Some(404),
             };
 
-            (
-                StatusCode::NOT_FOUND,
-                Json(to_value(error_response).unwrap()),
-            )
+            match to_value(error_response) {
+                Ok(value) => (StatusCode::NOT_FOUND, Json(value)),
+                Err(e) => {
+                    error!("Failed to serialize error response: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(to_value(ErrorResponse {
+                            error: true,
+                            message: "Internal server error".to_string(),
+                            code: Some(500),
+                        }).unwrap_or_default()),
+                    )
+                }
+            }
         }
     }
 }
@@ -178,7 +201,20 @@ pub async fn resize_session(
                     success: true,
                 };
 
-                (StatusCode::OK, Json(to_value(success_response).unwrap()))
+                match to_value(success_response) {
+                    Ok(value) => (StatusCode::OK, Json(value)),
+                    Err(e) => {
+                        error!("Failed to serialize resize response: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(to_value(ErrorResponse {
+                                error: true,
+                                message: "Internal server error".to_string(),
+                                code: Some(500),
+                            }).unwrap_or_default()),
+                        )
+                    }
+                }
             } else {
                 // Return error if update failed
                 let error_response = ErrorResponse {
@@ -187,10 +223,20 @@ pub async fn resize_session(
                     code: Some(500),
                 };
 
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(to_value(error_response).unwrap()),
-                )
+                match to_value(error_response) {
+                    Ok(value) => (StatusCode::INTERNAL_SERVER_ERROR, Json(value)),
+                    Err(e) => {
+                        error!("Failed to serialize error response: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(to_value(ErrorResponse {
+                                error: true,
+                                message: "Internal server error".to_string(),
+                                code: Some(500),
+                            }).unwrap_or_default()),
+                        )
+                    }
+                }
             }
         }
         None => {
@@ -201,10 +247,20 @@ pub async fn resize_session(
                 code: Some(404),
             };
 
-            (
-                StatusCode::NOT_FOUND,
-                Json(to_value(error_response).unwrap()),
-            )
+            match to_value(error_response) {
+                Ok(value) => (StatusCode::NOT_FOUND, Json(value)),
+                Err(e) => {
+                    error!("Failed to serialize error response: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(to_value(ErrorResponse {
+                            error: true,
+                            message: "Internal server error".to_string(),
+                            code: Some(500),
+                        }).unwrap_or_default()),
+                    )
+                }
+            }
         }
     }
 }
@@ -226,7 +282,20 @@ pub async fn terminate_session(
                 reason: "Session terminated by API request".to_string(),
             };
 
-            (StatusCode::OK, Json(to_value(success_response).unwrap()))
+            match to_value(success_response) {
+                Ok(value) => (StatusCode::OK, Json(value)),
+                Err(e) => {
+                    error!("Failed to serialize terminate response: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(to_value(ErrorResponse {
+                            error: true,
+                            message: "Internal server error".to_string(),
+                            code: Some(500),
+                        }).unwrap_or_default()),
+                    )
+                }
+            }
         }
         None => {
             // Return error using ErrorResponse struct
@@ -236,10 +305,20 @@ pub async fn terminate_session(
                 code: Some(404),
             };
 
-            (
-                StatusCode::NOT_FOUND,
-                Json(to_value(error_response).unwrap()),
-            )
+            match to_value(error_response) {
+                Ok(value) => (StatusCode::NOT_FOUND, Json(value)),
+                Err(e) => {
+                    error!("Failed to serialize error response: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(to_value(ErrorResponse {
+                            error: true,
+                            message: "Internal server error".to_string(),
+                            code: Some(500),
+                        }).unwrap_or_default()),
+                    )
+                }
+            }
         }
     }
 }
