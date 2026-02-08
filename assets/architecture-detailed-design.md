@@ -144,7 +144,7 @@ public class AuthFilter implements GlobalFilter {
 - 根据运行模式决定路径（DUAL_RUN/SINGLE_RUN）
 - Primary路径同步处理
 - Secondary路径异步旁路处理
-- 使用publish().autoConnect(2)确保body可重读
+- 使用share()确保body可重读，明确大body不支持
 
 #### **3. AuditFilter (@Order(0))**
 **职责**：审计记录
@@ -293,9 +293,8 @@ public class DualRunFilter implements GlobalFilter {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String correlationId = generateCorrelationId();
         
-        // 关键：使用publish().autoConnect(2)创建共享流
-        Flux<DataBuffer> sharedBody = exchange.getRequest().getBody()
-            .publish().autoConnect(2); // 需要2个订阅者：Primary和Secondary
+        // 简化：使用share()创建共享流，明确大body不支持
+        Flux<DataBuffer> sharedBody = exchange.getRequest().getBody().share();
         
         // 重新设置请求体
         ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
@@ -338,11 +337,11 @@ public class DualRunFilter implements GlobalFilter {
 }
 ```
 
-### **订阅者管理要点**
-- **Primary订阅者**：chain.filter()自动订阅
-- **Secondary订阅者**：processSecondaryAsync()手动订阅
-- **背压控制**：autoConnect(2)确保只有2个订阅者
-- **内存安全**：不缓存整个body，流式处理
+### **简化设计原则**
+- **大body不支持**：超过1MB的body直接跳过Secondary处理
+- **简单优先**：使用`share()`替代复杂的订阅者管理
+- **性能优先**：避免内存缓存，流式处理
+- **明确限制**：Content-Length检查，超限直接拒绝
 
 ### **安全的Body处理方案**
 ```java
