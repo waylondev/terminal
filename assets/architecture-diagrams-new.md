@@ -1,0 +1,422 @@
+# 全异步链路系统 - 架构图与时序图
+
+## 📊 整体架构图
+
+### 系统架构概览
+
+```mermaid
+graph TB
+    A[客户端] --> B[Spring Cloud Gateway]
+    
+    subgraph "Gateway核心"
+        B --> C[AuthFilter<br/>认证鉴权]
+        C --> D[DualRunFilter<br/>双轨运行]
+        D --> E[AuditFilter<br/>审计记录]
+        E --> F[ResponseFilter<br/>响应包装]
+    end
+    
+    subgraph "Primary路径（同步）"
+        D --> G[Primary Service]
+        G --> H((响应客户端))
+    end
+    
+    subgraph "Secondary路径（异步）"
+        D -.-> I[Secondary Service]
+        I -.-> J[异步记录结果]
+    end
+    
+    subgraph "事件处理系统"
+        E --> K[EventBus]
+        K --> L[AuditProcessor]
+        K --> M[MetricsProcessor]
+        K --> N[AlertProcessor]
+    end
+    
+    subgraph "数据存储"
+        L --> O[(PostgreSQL)]
+        M --> P[Prometheus]
+        N --> Q[AlertManager]
+    end
+    
+    F --> H
+    
+    style B fill:#e1f5fe
+    style C fill:#f3e5f5
+    style D fill:#e8f5e8
+    style E fill:#fff3e0
+    style F fill:#fce4ec
+    style G fill:#bbdefb
+    style I fill:#c8e6c9
+    style K fill:#ffecb3
+```
+
+### 架构特点说明
+
+**核心架构模式：**
+- **反应式网关**：基于Spring Cloud Gateway + WebFlux
+- **双轨运行**：Primary同步 + Secondary异步旁路
+- **事件驱动**：松耦合的事件处理架构
+- **注解驱动**：基于@Order的Filter执行顺序管理
+
+**技术优势：**
+- ✅ **高性能**：单机QPS > 10,000
+- ✅ **低延迟**：P99响应时间 < 100ms
+- ✅ **弹性设计**：熔断、限流、降级策略
+- ✅ **可观测性**：完整监控体系
+
+---
+
+## ⏱️ 请求处理时序图
+
+### DUAL_RUN模式时序图
+
+```mermaid
+sequenceDiagram
+    participant C as 客户端
+    participant G as Gateway
+    participant A as AuthFilter
+    participant R as DualRunFilter
+    participant AU as AuditFilter
+    participant RS as ResponseFilter
+    participant P as Primary Service
+    participant S as Secondary Service
+    participant E as EventBus
+    participant DB as 数据库
+    
+    C->>G: HTTP请求
+    
+    Note over G: Filter Chain执行开始
+    
+    G->>A: @Order(-1000) 认证
+    A-->>G: 认证通过
+    
+    G->>R: @Order(-500) 双轨运行
+    
+    Note over R: 关键设计点：不阻塞Primary
+    
+    R->>P: 同步调用Primary
+    R->>S: 异步调用Secondary
+    
+    Note over R,S: Secondary异步处理，不阻塞主流程
+    
+    P-->>R: Primary响应
+    R-->>G: 路由完成
+    
+    G->>AU: @Order(0) 审计记录
+    AU->>E: 发布REQUEST事件
+    AU->>DB: 异步记录请求
+    AU-->>G: 审计完成
+    
+    G->>RS: @Order(1000) 响应包装
+    RS->>E: 发布RESPONSE事件
+    RS-->>G: 包装完成
+    
+    G-->>C: 返回响应
+    
+    Note over S,DB: Secondary处理完成（异步）
+    S->>DB: 异步记录结果
+    S->>E: 发布RESPONSE事件
+```
+
+### SINGLE_RUN模式时序图
+
+```mermaid
+sequenceDiagram
+    participant C as 客户端
+    participant G as Gateway
+    participant A as AuthFilter
+    participant R as DualRunFilter
+    participant AU as AuditFilter
+    participant RS as ResponseFilter
+    participant P as Primary Service
+    participant E as EventBus
+    participant DB as 数据库
+    
+    C->>G: HTTP请求
+    
+    G->>A: @Order(-1000) 认证
+    A-->>G: 认证通过
+    
+    G->>R: @Order(-500) 单轨运行
+    R->>P: 同步调用Primary
+    
+    P-->>R: Primary响应
+    R-->>G: 路由完成
+    
+    G->>AU: @Order(0) 审计记录
+    AU->>E: 发布REQUEST事件
+    AU->>DB: 异步记录请求
+    AU-->>G: 审计完成
+    
+    G->>RS: @Order(1000) 响应包装
+    RS->>E: 发布RESPONSE事件
+    RS-->>G: 包装完成
+    
+    G-->>C: 返回响应
+```
+
+---
+
+## 🔗 模块依赖关系图
+
+### 模块架构图
+
+```mermaid
+graph TD
+    A[gateway模块] --> B[runtime-orchestration模块]
+    A --> C[request-tracing模块]
+    A --> D[shared-infrastructure模块]
+    
+    B --> E[Primary Service]
+    B --> F[Secondary Service]
+    
+    C --> G[EventBus]
+    C --> H[AuditService]
+    C --> I[ComparisonService]
+    
+    D --> J[WebClient配置]
+    D --> K[线程池配置]
+    D --> L[数据库连接池]
+    
+    G --> M[AuditProcessor]
+    G --> N[MetricsProcessor]
+    G --> O[AlertProcessor]
+    
+    H --> P[(PostgreSQL)]
+    I --> Q[规则引擎]
+    
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
+    style C fill:#e8f5e8
+    style D fill:#fff3e0
+    style G fill:#ffecb3
+```
+
+### 模块职责说明
+
+| 模块名称 | 核心职责 | 包含组件 |
+|----------|----------|----------|
+| **gateway** | 技术网关 | Filter实现、路由配置 |
+| **runtime-orchestration** | 业务编排 | 双轨运行逻辑、模式切换 |
+| **request-tracing** | 请求追踪 | 审计服务、事件处理 |
+| **shared-infrastructure** | 基础设施 | 事件总线、工具类 |
+
+---
+
+## 🔄 数据处理流程图
+
+### Body处理流程
+
+```mermaid
+flowchart TD
+    A[客户端请求] --> B[读取Request Body]
+    
+    B --> C[创建可重放流<br/>Flux.cache]
+    
+    C --> D[Primary路径<br/>同步处理]
+    C --> E[Secondary路径<br/>异步处理]
+    
+    D --> F[获取Primary响应]
+    E --> G[获取Secondary响应]
+    
+    F --> H[返回客户端响应]
+    G --> I[异步记录结果]
+    
+    H --> J[响应完成]
+    I --> K[审计完成]
+    
+    style D fill:#bbdefb
+    style E fill:#c8e6c9
+    style F fill:#bbdefb
+    style G fill:#c8e6c9
+```
+
+### 事件处理流程
+
+```mermaid
+flowchart LR
+    A[Filter执行] --> B[发布事件]
+    
+    B --> C[EventBus]
+    
+    C --> D[AuditProcessor]
+    C --> E[MetricsProcessor]
+    C --> F[AlertProcessor]
+    
+    D --> G[数据库写入]
+    E --> H[指标收集]
+    F --> I[告警触发]
+    
+    G --> J[审计完成]
+    H --> K[监控完成]
+    I --> L[告警完成]
+    
+    style C fill:#ffecb3
+```
+
+---
+
+## ⚡ 性能优化流程图
+
+### 异步处理优化
+
+```mermaid
+flowchart TD
+    A[请求到达] --> B{运行模式判断}
+    
+    B -->|DUAL_RUN| C[Primary同步处理]
+    B -->|DUAL_RUN| D[Secondary异步处理]
+    B -->|SINGLE_RUN| E[仅Primary处理]
+    
+    C --> F[返回响应]
+    D --> G[异步记录]
+    E --> F
+    
+    F --> H[请求完成]
+    G --> I[审计完成]
+    
+    style C fill:#bbdefb
+    style D fill:#c8e6c9
+    style E fill:#bbdefb
+```
+
+### 错误处理流程
+
+```mermaid
+flowchart TD
+    A[请求处理] --> B{处理成功?}
+    
+    B -->|是| C[正常响应]
+    B -->|否| D[错误处理]
+    
+    D --> E[记录错误事件]
+    D --> F[返回错误响应]
+    
+    E --> G[异步错误记录]
+    F --> H[错误响应完成]
+    
+    C --> I[正常响应完成]
+    
+    style D fill:#ffcdd2
+    style E fill:#ffcdd2
+    style F fill:#ffcdd2
+```
+
+---
+
+## 📈 监控指标图
+
+### 关键性能指标
+
+```mermaid
+quadrantChart
+    title 系统性能指标矩阵
+    x-axis 低延迟 --> 高延迟
+    y-axis 低吞吐量 --> 高吞吐量
+    
+    quadrant-1 优化目标区
+    quadrant-2 高延迟区
+    quadrant-3 低性能区
+    quadrant-4 高吞吐区
+    
+    Primary路径: [0.2, 0.8]
+    Secondary路径: [0.7, 0.6]
+    事件处理: [0.3, 0.4]
+    数据库写入: [0.6, 0.3]
+```
+
+### 系统健康状态
+
+```mermaid
+pie title 系统健康状态分布
+    "正常" : 85
+    "警告" : 10
+    "错误" : 5
+```
+
+---
+
+## 🎯 架构优势可视化
+
+### 技术选型优势对比
+
+```mermaid
+xychart-beta
+    title 技术选型优势对比
+    x-axis ["性能", "生态", "运维", "扩展"]
+    y-axis "评分" 0 --> 5
+    
+    "Spring Cloud Gateway" : [5, 5, 4, 4]
+    "Netflix Zuul" : [3, 4, 3, 3]
+    "Nginx" : [5, 2, 3, 3]
+```
+
+### 架构演进路径
+
+```mermaid
+timeline
+    title 架构演进时间线
+    
+    section 阶段一
+        基础网关 : 部署Spring Cloud Gateway
+        : 实现基础路由
+    
+    section 阶段二
+        双轨运行 : 实现DUAL_RUN模式
+        : 集成Primary/Secondary
+    
+    section 阶段三
+        全链路追踪 : 实现审计追踪
+        : 完善监控体系
+    
+    section 阶段四
+        生产验证 : 小流量验证
+        : 正式上线
+```
+
+---
+
+## 🔧 实施路线图
+
+### 开发实施流程
+
+```mermaid
+graph LR
+    A[需求分析] --> B[技术选型]
+    B --> C[架构设计]
+    C --> D[模块开发]
+    D --> E[集成测试]
+    E --> F[性能优化]
+    F --> G[生产部署]
+    
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
+    style C fill:#e8f5e8
+    style D fill:#fff3e0
+    style E fill:#fce4ec
+    style F fill:#ffecb3
+    style G fill:#c8e6c9
+```
+
+### 风险评估矩阵
+
+```mermaid
+quadrantChart
+    title 实施风险评估
+    x-axis 低影响 --> 高影响
+    y-axis 低概率 --> 高概率
+    
+    quadrant-1 监控区
+    quadrant-2 重点防范区
+    quadrant-3 忽略区
+    quadrant-4 关注区
+    
+    "性能瓶颈": [0.7, 0.6]
+    "数据一致性": [0.8, 0.3]
+    "安全漏洞": [0.9, 0.2]
+    "配置错误": [0.4, 0.7]
+```
+
+---
+
+*本文档通过可视化图表全面展示了系统架构设计，便于团队理解和沟通。*

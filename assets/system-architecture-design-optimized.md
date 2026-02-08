@@ -15,7 +15,8 @@
 |----------|----------|----------|
 | **基于Spring Cloud Gateway的全异步架构** | Spring Cloud Gateway + WebFlux | 高性能网关，支撑高并发场景 |
 | **单体多模块设计** | Spring Boot 3 + Maven多模块 | 平衡开发效率与系统性能 |
-| **双轨运行模式** | 自定义过滤器 + Resilience4j | 实现Legacy到New Core的平滑迁移 |
+| **双轨运行模式** | 自定义过滤器 + Resilience4j | 实现Primary到Secondary的平滑迁移 |
+| **事件驱动架构** | Project Reactor Sinks + 事件总线 | 松耦合设计，支持异步事件处理 |
 
 ### **技术关键** → **技术选型**
 | 技术要点 | 技术实现 | 选型理由 |
@@ -27,20 +28,22 @@
 ### **业务价值** → **技术选型**
 | 业务价值 | 技术实现 | 选型理由 |
 |----------|----------|----------|
-| **零影响迁移** | 线程池隔离 + 异步旁路 | 确保Legacy系统不受影响 |
+| **零影响迁移** | 线程池隔离 + 异步旁路 | 确保Primary系统不受影响 |
 | **全链路审计** | 异步批量处理 + PostgreSQL | 请求全生命周期可追溯 |
 | **智能对比** | 规则引擎 + JSON对比算法 | 规则驱动的差异分析 |
+| **事件可观测性** | Sinks事件流 + 结构化日志 | 实时监控和故障排查 |
 
 ---
 
 ## 1. 设计目标与核心价值
 
 ### 1.1 核心目标
-- **双轨运行**：实现Legacy与New Core的并行处理与结果对比
+- **双轨运行**：实现Primary与Secondary的并行处理与结果对比
 - **全链路审计**：确保请求全生命周期的可追溯性（raw payload、headers、metadata等）
 - **高性能处理**：基于反应式架构支撑高并发场景
-- **平滑迁移**：支持从Legacy到New Core的无缝切换
+- **平滑迁移**：支持从Primary到Secondary的无缝切换
 - **多实例HA**：支持水平扩展和跨实例调用关联
+- **事件驱动**：基于Sinks的事件处理系统，实现松耦合架构
 
 ### 1.2 设计约束
 - **记录不能阻塞业务**：审计/转发/outcome/diff的持久化失败不得影响请求处理，尤其不得影响Legacy
@@ -64,8 +67,15 @@
 ```
 
 ### 2.2 运行模式
-- **DUAL_RUN**：Legacy（同步主路径）+ New Core（异步旁路）
-- **NEW_ONLY**：仅New Core（同步主路径）
+- **DUAL_RUN**：Primary（同步主路径）+ Secondary（异步旁路）
+- **SINGLE_RUN**：仅Primary（同步主路径）
+
+### 2.3 事件驱动架构
+```
+请求处理 → Filter链执行 → 事件发布 → 异步处理
+    ↓
+事件处理器 → 审计记录 → 结果对比 → 监控告警
+```
 
 ## ⚡ 技术选型体系
 
@@ -381,11 +391,100 @@
 - **迁移失败**：完善的回滚策略
 - **团队适应**：充分的技术支持和文档
 
-## 11. 测试策略
+## 🔧 核心实现细节
 
-### 11.1 测试层次
+### 11.1 Filter执行顺序与职责
 
-#### 11.1.1 单元测试
+#### 11.1.1 基于@Order注解的Filter设计
+| Order | Filter名称 | 职责 | 关键特性 |
+|-------|------------|------|----------|
+| -1000 | **AuthFilter** | 认证鉴权 | JWT验证、权限检查 |
+| -500 | **RoutingFilter** | 路由分发 | Primary/Secondary路径选择 |
+| 0 | **AuditFilter** | 审计记录 | 异步记录请求/响应数据 |
+| 1000 | **ResponseFilter** | 响应包装 | 添加Correlation ID等Header |
+
+#### 11.1.2 Filter实现示例
+```java
+@Component
+@Order(-1000)
+public class AuthFilter implements GlobalFilter {
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        // 认证逻辑
+        return chain.filter(exchange);
+    }
+}
+
+@Component
+@Order(1000)
+public class ResponseFilter implements GlobalFilter {
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        return chain.filter(exchange)
+            .then(Mono.fromRunnable(() -> {
+                // 响应包装逻辑
+            }));
+    }
+}
+```
+
+### 11.2 事件驱动架构设计
+
+#### 11.2.1 事件类型定义
+```java
+public enum EventType {
+    REQUEST,      // 请求接收，用于记录请求数据
+    RESPONSE      // 响应返回，用于记录响应数据
+}
+```
+
+#### 11.2.2 事件发布时机
+| 事件类型 | 发布时机 | 包含数据 |
+|----------|----------|----------|
+| REQUEST | 请求进入网关时 | correlationId, headers, path, method, payload |
+| RESPONSE | 响应返回客户端时 | correlationId, status, latency, responseData |
+
+#### 11.2.3 基于Sinks的事件总线
+```java
+@Component
+public class EventBus {
+    private final Sinks.Many<SystemEvent> eventSink = Sinks.many().multicast().directBestEffort();
+    
+    public Flux<SystemEvent> getEventStream() {
+        return eventSink.asFlux();
+    }
+    
+    public void publishEvent(SystemEvent event) {
+        eventSink.tryEmitNext(event);
+    }
+}
+```
+
+### 11.3 异步链路实现细节
+
+#### 11.3.1 双轨运行处理流程
+```java
+public Mono<ServerResponse> processDualRun(ServerRequest request) {
+    String correlationId = generateCorrelationId();
+    
+    return processPrimary(request, correlationId)  // 同步Primary处理
+        .doOnSuccess(response -> {
+            // 异步Secondary处理，不阻塞主流程
+            processSecondaryAsync(request, correlationId).subscribe();
+        });
+}
+```
+
+#### 11.3.2 背压控制与资源管理
+- **线程池配置**：audit-pool（50线程，1000队列）
+- **WebClient配置**：连接超时5s，读取超时10s
+- **数据库连接池**：HikariCP（最大连接数20，最小连接数5）
+
+## 12. 测试策略
+
+### 12.1 测试层次
+
+#### 12.1.1 单元测试
 - **组件测试**：测试各组件的独立功能
 - **过滤器测试**：测试自定义过滤器的逻辑
 - **反应式测试**：使用StepVerifier测试反应式流
