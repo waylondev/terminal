@@ -27,7 +27,7 @@
 - 根据运行模式决定路径（DUAL_RUN/SINGLE_RUN）
 - Primary路径同步处理
 - Secondary路径异步旁路处理
-- 使用cache()操作符确保body可重读
+- 使用publish().autoConnect(2)确保body可重读
 
 #### **3. AuditFilter (@Order(0))**
 **职责**：审计记录
@@ -97,8 +97,48 @@ public class NonBlockingEventBus implements EventBus {
     public Flux<SystemEvent> getEventStream() {
         return eventSink.asFlux()
             .onBackpressureBuffer(100, BufferOverflowStrategy.DROP_OLDEST)
-            .doOnNext(event -> metrics.recordEventProcessed());
+            .doOnNext(event -> metrics.recordEventProcessed())
+            .doOnError(error -> metrics.recordEventError(error));
     }
+}
+
+### **简洁的监控指标设计**
+```java
+@Component
+public class EventMetrics {
+    
+    private final MeterRegistry meterRegistry;
+    
+    // 核心监控指标
+    private final Counter eventsPublished = Counter.builder("events.published").register(meterRegistry);
+    private final Counter eventsProcessed = Counter.builder("events.processed").register(meterRegistry);
+    private final Counter eventsDropped = Counter.builder("events.dropped").register(meterRegistry);
+    private final Counter secondaryFailures = Counter.builder("secondary.failures").register(meterRegistry);
+    
+    public void recordEventPublished() {
+        eventsPublished.increment();
+    }
+    
+    public void recordEventProcessed() {
+        eventsProcessed.increment();
+    }
+    
+    public void recordEventDropped(Sinks.EmitResult result) {
+        eventsDropped.increment();
+        // 记录丢弃原因
+        meterRegistry.counter("events.dropped.reason", "reason", result.name()).increment();
+    }
+    
+    public void recordSecondaryFailure(String correlationId, Throwable error) {
+        secondaryFailures.increment();
+        // 记录错误类型
+        meterRegistry.counter("secondary.failures.type", "type", error.getClass().getSimpleName()).increment();
+    }
+    
+    public void recordEventError(Throwable error) {
+        meterRegistry.counter("events.errors", "type", error.getClass().getSimpleName()).increment();
+    }
+}
 }
 ```
 
@@ -125,6 +165,67 @@ public class AuditEventHandler implements EventHandler {
 ### **Body复制挑战**
 - **问题**：Spring WebFlux的DataBuffer只能被消费一次
 - **解决方案**：使用publish().autoConnect(2)创建共享流，避免内存缓存
+
+### **关键实现细节**
+```java
+@Component
+@Order(-500)
+public class DualRunFilter implements GlobalFilter {
+    
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        String correlationId = generateCorrelationId();
+        
+        // 关键：使用publish().autoConnect(2)创建共享流
+        Flux<DataBuffer> sharedBody = exchange.getRequest().getBody()
+            .publish().autoConnect(2); // 需要2个订阅者：Primary和Secondary
+        
+        // 重新设置请求体
+        ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
+            .body(sharedBody)
+            .build();
+        ServerWebExchange mutatedExchange = exchange.mutate()
+            .request(mutatedRequest)
+            .build();
+        
+        // 异步处理Secondary
+        if (isDualRunEnabled()) {
+            processSecondaryAsync(sharedBody, correlationId).subscribe();
+        }
+        
+        // 同步处理Primary
+        return chain.filter(mutatedExchange);
+    }
+    
+    private Mono<Void> processSecondaryAsync(Flux<DataBuffer> bodyStream, String correlationId) {
+        return Mono.fromRunnable(() -> {
+            bodyStream
+                .collectList()
+                .flatMap(buffers -> {
+                    return webClient.post()
+                        .uri(secondaryConfig.getBaseUrl())
+                        .body(BodyInserters.fromDataBuffers(Flux.fromIterable(buffers)))
+                        .exchangeToMono(response -> auditService.recordResponse(correlationId, response));
+                })
+                .timeout(Duration.ofSeconds(5)) // 超时控制：5秒
+                .onErrorResume(error -> {
+                    // 简洁的故障处理：记录错误，不影响Primary
+                    log.warn("Secondary processing failed for correlationId: {}", correlationId, error);
+                    metrics.recordSecondaryFailure(correlationId, error);
+                    return Mono.empty();
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe();
+        });
+    }
+}
+```
+
+### **订阅者管理要点**
+- **Primary订阅者**：chain.filter()自动订阅
+- **Secondary订阅者**：processSecondaryAsync()手动订阅
+- **背压控制**：autoConnect(2)确保只有2个订阅者
+- **内存安全**：不缓存整个body，流式处理
 
 ### **安全的Body处理方案**
 ```java
@@ -212,16 +313,39 @@ public class BodySizeChecker {
 
 ### **业务实现要点**
 
-#### **1. 双轨运行配置**
+#### **1. 双轨运行配置（支持动态切换）**
 ```yaml
 gateway:
-  run-mode: DUAL_RUN  # DUAL_RUN | SINGLE_RUN
+  run-mode: DUAL_RUN  # DUAL_RUN | SINGLE_RUN（支持热更新）
   primary:
     base-url: http://primary-service
     timeout: 5000
   secondary:
     base-url: http://secondary-service
     timeout: 3000
+    enabled-apis: ["/api/v1/users", "/api/v1/orders"]  # API粒度控制
+```
+
+#### **2. 动态配置管理**
+```java
+@Component
+@RefreshScope
+public class GatewayConfig {
+    
+    @Value("${gateway.run-mode:DUAL_RUN}")
+    private String runMode;
+    
+    @Value("${gateway.secondary.enabled-apis}")
+    private List<String> enabledApis;
+    
+    public boolean isDualRunEnabled() {
+        return "DUAL_RUN".equals(runMode);
+    }
+    
+    public boolean isApiEnabled(String path) {
+        return enabledApis.contains(path);
+    }
+}
 ```
 
 #### **2. 事件处理器注册**
@@ -262,6 +386,21 @@ public class GlobalErrorHandler {
 ---
 
 ## 📊 性能保障机制
+
+### **性能基准指标**
+```yaml
+# 性能目标（单实例）
+performance:
+  primary:
+    p99-latency: < 50ms     # Primary路径P99延迟
+    qps: > 10,000           # 单机QPS
+  secondary:
+    impact: < 1ms           # Secondary对Primary的影响
+    timeout: 5s             # Secondary超时时间
+  memory:
+    max-usage: 500MB        # 最大内存使用
+    queue-size: 100         # 事件队列大小
+```
 
 ### **线程池配置**
 ```java

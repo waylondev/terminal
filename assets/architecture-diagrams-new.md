@@ -8,65 +8,46 @@
 graph TB
     A[客户端] --> B[Spring Cloud Gateway]
     
-    subgraph "Gateway核心 - 不阻塞Primary设计"
+    subgraph "Gateway核心"
         B --> C[AuthFilter<br/>认证鉴权]
-        C --> D[DualRunFilter<br/>双轨运行编排]
-        D --> E[AuditFilter<br/>异步审计]
+        C --> D[DualRunFilter<br/>双轨运行]
+        D --> E[AuditFilter<br/>审计记录]
         E --> F[ResponseFilter<br/>响应包装]
     end
     
-    subgraph "🔵 Primary路径（同步关键路径）"
-        D -->|同步调用| G[Primary Service]
+    subgraph "Primary路径（同步）"
+        D --> G[Primary Service]
         G --> H[响应客户端]
-        
-        style G fill:#bbdefb,stroke:#1976d2,stroke-width:3px
-        style H fill:#bbdefb,stroke:#1976d2,stroke-width:3px
     end
     
-    subgraph "🟢 Secondary路径（全异步旁路）"
-        D -.->|异步调用| I[Secondary Service]
+    subgraph "Secondary路径（异步）"
+        D -.-> I[Secondary Service]
         I -.-> J[异步记录结果]
-        
-        style I fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
-        style J fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
     end
     
-    subgraph "⚡ 事件处理系统（全异步）"
-        E -->|异步发布| K[EventBus<br/>directBestEffort]
-        K -->|异步处理| L[AuditProcessor]
-        K -->|异步处理| M[MetricsProcessor]
-        K -->|异步处理| N[AlertProcessor]
-        
-        style K fill:#ffecb3,stroke:#ffa000,stroke-width:2px
+    subgraph "事件处理系统"
+        E --> K[EventBus]
+        K --> L[AuditProcessor]
+        K --> M[MetricsProcessor]
+        K --> N[AlertProcessor]
     end
     
-    subgraph "💾 数据存储（异步写入）"
-        L -.-> O[(PostgreSQL)]
-        M -.-> P[Prometheus]
-        N -.-> Q[AlertManager]
-        
-        style O fill:#f8bbd9,stroke:#c2185b,stroke-width:2px
+    subgraph "数据存储"
+        L --> O[(PostgreSQL)]
+        M --> P[Prometheus]
+        N --> Q[AlertManager]
     end
     
     F --> H
     
-    %% 关键路径标注
-    classDef primaryPath fill:#e3f2fd,stroke:#1976d2,stroke-width:3px
-    classDef asyncPath fill:#f1f8e9,stroke:#388e3c,stroke-width:2px,dashed
-    classDef eventPath fill:#fffde7,stroke:#ffa000,stroke-width:2px
-    
-    class G,H primaryPath
-    class I,J asyncPath
-    class K,L,M,N eventPath
-    
-    %% 设计原则标注
-    P1["🎯 设计原则<br/>不阻塞Primary"] --> D
-    P2["⚡ 技术实现<br/>directBestEffort"] --> K
-    P3["🛡️ 错误隔离<br/>优雅降级"] --> I
-    
-    style P1 fill:#e8f5e8,stroke:#4caf50
-    style P2 fill:#e3f2fd,stroke:#2196f3
-    style P3 fill:#ffebee,stroke:#f44336
+    style B fill:#e1f5fe
+    style C fill:#f3e5f5
+    style D fill:#e8f5e8
+    style E fill:#fff3e0
+    style F fill:#fce4ec
+    style G fill:#bbdefb
+    style I fill:#c8e6c9
+    style K fill:#ffecb3
 ```
 
 ### 架构特点说明
