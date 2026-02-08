@@ -1,53 +1,72 @@
 # 全异步链路系统 - 架构图与时序图
 
-## 📊 整体架构图
+## 📊 整体架构图 - 突出全异步链路设计
 
-### 系统架构概览
+### 核心设计理念：全异步链路，不影响Primary
 
 ```mermaid
 graph TB
     A[客户端] --> B[Spring Cloud Gateway]
     
-    subgraph "Gateway核心"
+    subgraph "Gateway核心 - 不阻塞Primary设计"
         B --> C[AuthFilter<br/>认证鉴权]
-        C --> D[DualRunFilter<br/>双轨运行]
-        D --> E[AuditFilter<br/>审计记录]
+        C --> D[DualRunFilter<br/>双轨运行编排]
+        D --> E[AuditFilter<br/>异步审计]
         E --> F[ResponseFilter<br/>响应包装]
     end
     
-    subgraph "Primary路径（同步）"
-        D --> G[Primary Service]
-        G --> H((响应客户端))
+    subgraph "🔵 Primary路径（同步关键路径）"
+        D -->|同步调用| G[Primary Service]
+        G --> H[响应客户端]
+        
+        style G fill:#bbdefb,stroke:#1976d2,stroke-width:3px
+        style H fill:#bbdefb,stroke:#1976d2,stroke-width:3px
     end
     
-    subgraph "Secondary路径（异步）"
-        D -.-> I[Secondary Service]
+    subgraph "🟢 Secondary路径（全异步旁路）"
+        D -.->|异步调用| I[Secondary Service]
         I -.-> J[异步记录结果]
+        
+        style I fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
+        style J fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
     end
     
-    subgraph "事件处理系统"
-        E --> K[EventBus]
-        K --> L[AuditProcessor]
-        K --> M[MetricsProcessor]
-        K --> N[AlertProcessor]
+    subgraph "⚡ 事件处理系统（全异步）"
+        E -->|异步发布| K[EventBus<br/>directBestEffort]
+        K -->|异步处理| L[AuditProcessor]
+        K -->|异步处理| M[MetricsProcessor]
+        K -->|异步处理| N[AlertProcessor]
+        
+        style K fill:#ffecb3,stroke:#ffa000,stroke-width:2px
     end
     
-    subgraph "数据存储"
-        L --> O[(PostgreSQL)]
-        M --> P[Prometheus]
-        N --> Q[AlertManager]
+    subgraph "💾 数据存储（异步写入）"
+        L -.-> O[(PostgreSQL)]
+        M -.-> P[Prometheus]
+        N -.-> Q[AlertManager]
+        
+        style O fill:#f8bbd9,stroke:#c2185b,stroke-width:2px
     end
     
     F --> H
     
-    style B fill:#e1f5fe
-    style C fill:#f3e5f5
-    style D fill:#e8f5e8
-    style E fill:#fff3e0
-    style F fill:#fce4ec
-    style G fill:#bbdefb
-    style I fill:#c8e6c9
-    style K fill:#ffecb3
+    %% 关键路径标注
+    classDef primaryPath fill:#e3f2fd,stroke:#1976d2,stroke-width:3px
+    classDef asyncPath fill:#f1f8e9,stroke:#388e3c,stroke-width:2px,dashed
+    classDef eventPath fill:#fffde7,stroke:#ffa000,stroke-width:2px
+    
+    class G,H primaryPath
+    class I,J asyncPath
+    class K,L,M,N eventPath
+    
+    %% 设计原则标注
+    P1["🎯 设计原则<br/>不阻塞Primary"] --> D
+    P2["⚡ 技术实现<br/>directBestEffort"] --> K
+    P3["🛡️ 错误隔离<br/>优雅降级"] --> I
+    
+    style P1 fill:#e8f5e8,stroke:#4caf50
+    style P2 fill:#e3f2fd,stroke:#2196f3
+    style P3 fill:#ffebee,stroke:#f44336
 ```
 
 ### 架构特点说明
@@ -66,9 +85,9 @@ graph TB
 
 ---
 
-## ⏱️ 请求处理时序图
+## ⏱️ 请求处理时序图 - 突出全异步设计
 
-### DUAL_RUN模式时序图
+### DUAL_RUN模式时序图（不阻塞Primary）
 
 ```mermaid
 sequenceDiagram
@@ -85,37 +104,48 @@ sequenceDiagram
     
     C->>G: HTTP请求
     
-    Note over G: Filter Chain执行开始
+    Note over G: 🔵 Primary路径开始（关键路径）
     
     G->>A: @Order(-1000) 认证
     A-->>G: 认证通过
     
-    G->>R: @Order(-500) 双轨运行
+    G->>R: @Order(-500) 双轨运行编排
     
-    Note over R: 关键设计点：不阻塞Primary
+    Note over R: 🎯 关键设计：Secondary异步，不阻塞Primary
     
     R->>P: 同步调用Primary
+    
+    Note over R,S: 🟢 Secondary异步启动（不等待）
     R->>S: 异步调用Secondary
     
-    Note over R,S: Secondary异步处理，不阻塞主流程
-    
+    Note over R: ⚡ Primary继续，不等待Secondary
     P-->>R: Primary响应
     R-->>G: 路由完成
     
-    G->>AU: @Order(0) 审计记录
-    AU->>E: 发布REQUEST事件
-    AU->>DB: 异步记录请求
-    AU-->>G: 审计完成
+    Note over G: 🔵 Primary路径继续
+    
+    G->>AU: @Order(0) 异步审计
+    
+    Note over AU,E: ⚡ 事件异步发布（directBestEffort）
+    AU->>E: 异步发布REQUEST事件
+    AU-->>G: 审计完成（不等待事件处理）
     
     G->>RS: @Order(1000) 响应包装
-    RS->>E: 发布RESPONSE事件
+    RS->>E: 异步发布RESPONSE事件
     RS-->>G: 包装完成
     
-    G-->>C: 返回响应
+    G-->>C: 🔵 返回响应（Primary完成）
     
-    Note over S,DB: Secondary处理完成（异步）
-    S->>DB: 异步记录结果
-    S->>E: 发布RESPONSE事件
+    Note over C: ✅ 客户端收到响应，Primary路径结束
+    
+    Note over S,E,DB: 🟢 Secondary和事件处理继续（全异步）
+    
+    S-->>DB: 异步记录结果
+    S->>E: 异步发布RESPONSE事件
+    
+    E->>DB: 异步处理事件
+    
+    Note over S,E,DB: 🎯 设计原则：异步处理失败不影响Primary
 ```
 
 ### SINGLE_RUN模式时序图
@@ -203,32 +233,68 @@ graph TD
 
 ---
 
-## 🔄 数据处理流程图
+## 🔄 不阻塞Primary流程图 - 全异步链路设计
 
-### Body处理流程
+### 核心设计：Primary路径绝对优先
 
 ```mermaid
 flowchart TD
-    A[客户端请求] --> B[读取Request Body]
+    A[客户端请求] --> B[Gateway接收请求]
     
-    B --> C[创建可重放流<br/>Flux.cache]
+    B --> C{运行模式判断}
     
-    C --> D[Primary路径<br/>同步处理]
-    C --> E[Secondary路径<br/>异步处理]
+    C -->|DUAL_RUN| D[启动Primary同步处理]
+    C -->|DUAL_RUN| E[启动Secondary异步处理]
+    C -->|SINGLE_RUN| F[仅Primary同步处理]
     
-    D --> F[获取Primary响应]
-    E --> G[获取Secondary响应]
+    %% Primary路径（关键路径）
+    D --> G[Primary Service处理]
+    G --> H[生成Primary响应]
+    H --> I[返回客户端响应]
+    I --> J[🔵 Primary路径完成]
     
-    F --> H[返回客户端响应]
-    G --> I[异步记录结果]
+    %% Secondary路径（全异步旁路）
+    E -.-> K[Secondary Service处理]
+    K -.-> L[生成Secondary响应]
+    L -.-> M[🟢 异步记录结果]
     
-    H --> J[响应完成]
-    I --> K[审计完成]
+    %% 事件处理（全异步）
+    B -.-> N[⚡ 异步发布请求事件]
+    I -.-> O[⚡ 异步发布响应事件]
+    N -.-> P[EventBus处理]
+    O -.-> P
+    P -.-> Q[异步数据存储]
     
-    style D fill:#bbdefb
-    style E fill:#c8e6c9
-    style F fill:#bbdefb
-    style G fill:#c8e6c9
+    %% 关键路径标注
+    style D fill:#bbdefb,stroke:#1976d2,stroke-width:3px
+    style G fill:#bbdefb,stroke:#1976d2,stroke-width:3px
+    style H fill:#bbdefb,stroke:#1976d2,stroke-width:3px
+    style I fill:#bbdefb,stroke:#1976d2,stroke-width:3px
+    style J fill:#bbdefb,stroke:#1976d2,stroke-width:3px
+    
+    %% 异步路径标注
+    style E fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
+    style K fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
+    style L fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
+    style M fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
+    
+    %% 事件路径标注
+    style N fill:#ffecb3,stroke:#ffa000,stroke-width:2px
+    style O fill:#ffecb3,stroke:#ffa000,stroke-width:2px
+    style P fill:#ffecb3,stroke:#ffa000,stroke-width:2px
+    style Q fill:#ffecb3,stroke:#ffa000,stroke-width:2px
+    
+    %% 设计原则标注
+    subgraph "🎯 核心设计原则"
+        PR1[Primary路径绝对优先] --> PR2[Secondary全异步旁路]
+        PR2 --> PR3[事件处理directBestEffort]
+        PR3 --> PR4[错误隔离优雅降级]
+    end
+    
+    PR1 -.-> D
+    PR2 -.-> E
+    PR3 -.-> N
+    PR4 -.-> K
 ```
 
 ### 事件处理流程
