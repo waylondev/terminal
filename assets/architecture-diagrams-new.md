@@ -126,7 +126,7 @@ sequenceDiagram
     
     E->>DB: 异步处理事件
     
-    Note over S,E,DB: 🎯 设计原则：异步处理失败不影响Primary
+    Note over S: 🎯 设计原则：异步处理失败不影响Primary
 ```
 
 ### SINGLE_RUN模式时序图
