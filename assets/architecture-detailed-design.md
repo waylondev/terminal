@@ -14,12 +14,129 @@
 
 ### **4个核心Filter架构**
 
-#### **1. AuthFilter (@Order(-1000))**
+#### **1. CorrelationIdFilter (@Order(-1500))**
+**职责**：分布式追踪ID管理
+**关键特性**：
+- 生成或传递Correlation ID
+- 确保跨服务边界的ID一致性
+- 添加到请求头和响应头
+
+```java
+@Component
+@Order(-1500)
+public class CorrelationIdFilter implements GlobalFilter {
+    
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        String correlationId = exchange.getRequest().getHeaders().getFirst("X-Correlation-ID");
+        if (correlationId == null || correlationId.isEmpty()) {
+            correlationId = generateCorrelationId();
+        }
+        
+        // 添加到请求头，传递给下游服务
+        ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
+            .header("X-Correlation-ID", correlationId)
+            .build();
+            
+        ServerWebExchange mutatedExchange = exchange.mutate()
+            .request(mutatedRequest)
+            .build();
+            
+        // 添加到响应头，返回给客户端
+        mutatedExchange.getResponse().getHeaders().add("X-Correlation-ID", correlationId);
+        
+        return chain.filter(mutatedExchange);
+    }
+    
+    private String generateCorrelationId() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+    }
+}
+```
+
+#### **2. AuthFilter (@Order(-1000))**
 **职责**：请求认证与鉴权
 **关键特性**：
 - JWT Token验证
 - 基于角色的权限检查
 - 认证失败立即返回错误，不继续后续Filter
+
+```java
+@Component
+@Order(-1000)
+public class AuthFilter implements GlobalFilter {
+    
+    private final AuthService authService;
+    
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        String path = exchange.getRequest().getPath().value();
+        
+        // API级别的安全控制
+        if (requiresAuthentication(path)) {
+            return validateToken(exchange)
+                .flatMap(valid -> {
+                    if (valid) {
+                        return validatePermission(exchange, path)
+                            .flatMap(hasPermission -> {
+                                if (hasPermission) {
+                                    return chain.filter(exchange);
+                                } else {
+                                    return forbidden(exchange, "Insufficient permissions");
+                                }
+                            });
+                    } else {
+                        return unauthorized(exchange, "Invalid token");
+                    }
+                });
+        }
+        
+        // 公开API直接通过
+        return chain.filter(exchange);
+    }
+    
+    private boolean requiresAuthentication(String path) {
+        // 配置需要认证的API路径
+        return path.startsWith("/api/v1/admin") || 
+               path.startsWith("/api/v1/secure");
+    }
+    
+    private Mono<Boolean> validateToken(ServerWebExchange exchange) {
+        String token = extractToken(exchange.getRequest());
+        return authService.validateToken(token)
+            .onErrorReturn(false); // 错误时返回false
+    }
+    
+    private Mono<Boolean> validatePermission(ServerWebExchange exchange, String path) {
+        String token = extractToken(exchange.getRequest());
+        String method = exchange.getRequest().getMethod().name();
+        return authService.checkPermission(token, path, method)
+            .onErrorReturn(false);
+    }
+    
+    private Mono<Void> unauthorized(ServerWebExchange exchange, String message) {
+        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        return exchange.getResponse().writeWith(
+            Mono.just(exchange.getResponse().bufferFactory().wrap(message.getBytes()))
+        );
+    }
+    
+    private Mono<Void> forbidden(ServerWebExchange exchange, String message) {
+        exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+        return exchange.getResponse().writeWith(
+            Mono.just(exchange.getResponse().bufferFactory().wrap(message.getBytes()))
+        );
+    }
+    
+    private String extractToken(ServerHttpRequest request) {
+        String authHeader = request.getHeaders().getFirst("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+        return null;
+    }
+}
+```
 
 #### **2. DualRunFilter (@Order(-500))**  
 **职责**：双轨运行编排
@@ -326,7 +443,27 @@ gateway:
     enabled-apis: ["/api/v1/users", "/api/v1/orders"]  # API粒度控制
 ```
 
-#### **2. 动态配置管理**
+#### **2. 动态配置管理（支持流量控制和灰度发布）**
+```yaml
+# 支持流量控制和灰度发布的配置
+gateway:
+  run-mode: DUAL_RUN  # DUAL_RUN | SINGLE_RUN
+  traffic-control:
+    secondary:
+      percentage: 10%    # 只有10%流量走Secondary
+      enabled-apis: ["/api/v1/users", "/api/v1/orders"]
+    canary:
+      header: "X-Canary-Version"
+      values: ["v2", "v3"]
+      percentage: 5%
+  primary:
+    base-url: http://primary-service
+    timeout: 5000
+  secondary:
+    base-url: http://secondary-service
+    timeout: 3000
+```
+
 ```java
 @Component
 @RefreshScope
@@ -335,8 +472,16 @@ public class GatewayConfig {
     @Value("${gateway.run-mode:DUAL_RUN}")
     private String runMode;
     
-    @Value("${gateway.secondary.enabled-apis}")
+    @Value("${gateway.traffic-control.secondary.percentage:10%}")
+    private String secondaryPercentage;
+    
+    @Value("${gateway.traffic-control.secondary.enabled-apis}")
     private List<String> enabledApis;
+    
+    @Value("${gateway.traffic-control.canary.percentage:5%}")
+    private String canaryPercentage;
+    
+    private final Random random = new Random();
     
     public boolean isDualRunEnabled() {
         return "DUAL_RUN".equals(runMode);
@@ -344,6 +489,18 @@ public class GatewayConfig {
     
     public boolean isApiEnabled(String path) {
         return enabledApis.contains(path);
+    }
+    
+    public boolean shouldRouteToSecondary() {
+        // 流量控制：只有指定百分比的请求走Secondary
+        int percentage = Integer.parseInt(secondaryPercentage.replace("%", ""));
+        return random.nextInt(100) < percentage;
+    }
+    
+    public boolean isCanaryRequest(ServerHttpRequest request) {
+        // 灰度发布：基于Header判断
+        String canaryHeader = request.getHeaders().getFirst("X-Canary-Version");
+        return canaryHeader != null && !canaryHeader.isEmpty();
     }
 }
 ```
